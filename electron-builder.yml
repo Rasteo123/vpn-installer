@@ -1,0 +1,40 @@
+appId: com.vpn-installer.app
+productName: VPN Installer
+copyright: Copyright © 2026
+
+directories:
+  output: dist
+  buildResources: build
+
+# Bundle the app source + production deps (electron-builder pulls node_modules deps it needs).
+files:
+  - src/**/*
+  - package.json
+
+# Windows 64-bit: installer (NSIS) + standalone portable .exe
+win:
+  target:
+    - target: nsis
+      arch: x64
+    - target: portable
+      arch: x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+# macOS: .dmg + .zip (universal would need both arches; default = host arch)
+mac:
+  category: public.app-category.utilities
+  target:
+    - dmg
+    - zip
+
+# Linux: AppImage (portable) + .deb
+linux:
+  category: Network
+  target:
+    - AppImage
+    - deb

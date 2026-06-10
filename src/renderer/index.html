@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="VPN Installer — автоматическая установка VPN на сервер и настройка роутера OpenWrt" />
+  <title>VPN Installer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles/index.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ═══════════════ STEP INDICATOR ═══════════════ -->
+    <nav class="step-indicator" id="stepIndicator">
+      <div class="step-indicator__track">
+        <div class="step-indicator__line">
+          <div class="step-indicator__line-fill" id="stepLineFill"></div>
+        </div>
+        <button class="step-dot" data-step="0"><span class="step-dot__number">1</span><span class="step-dot__label">Старт</span></button>
+        <button class="step-dot" data-step="1"><span class="step-dot__number">2</span><span class="step-dot__label">Сервер</span></button>
+        <button class="step-dot" data-step="2"><span class="step-dot__number">3</span><span class="step-dot__label">Протоколы</span></button>
+        <button class="step-dot" data-step="3"><span class="step-dot__number">4</span><span class="step-dot__label">Установка</span></button>
+        <button class="step-dot" data-step="4"><span class="step-dot__number">5</span><span class="step-dot__label">Роутер</span></button>
+        <button class="step-dot" data-step="5"><span class="step-dot__number">6</span><span class="step-dot__label">Настройка</span></button>
+        <button class="step-dot" data-step="6"><span class="step-dot__number">7</span><span class="step-dot__label">Готово</span></button>
+      </div>
+    </nav>
+
+    <!-- ═══════════════ STEP CONTAINER ═══════════════ -->
+    <main class="step-container" id="stepContainer">
+
+      <!-- ───── STEP 1: WELCOME ───── -->
+      <section class="step step--active" id="step-0">
+        <div class="welcome">
+          <div class="welcome__icon">
+            <svg class="welcome__shield" viewBox="0 0 120 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="shieldGrad" x1="0" y1="0" x2="120" y2="140" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#00d4ff"/>
+                  <stop offset="50%" stop-color="#7c3aed"/>
+                  <stop offset="100%" stop-color="#c026d3"/>
+                </linearGradient>
+                <linearGradient id="shieldGradInner" x1="20" y1="20" x2="100" y2="120" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.2"/>
+                  <stop offset="100%" stop-color="#c026d3" stop-opacity="0.1"/>
+                </linearGradient>
+              </defs>
+              <path d="M60 8L12 30v40c0 33.14 20.48 64.12 48 75 27.52-10.88 48-41.86 48-75V30L60 8z" stroke="url(#shieldGrad)" stroke-width="3" fill="url(#shieldGradInner)"/>
+              <path d="M60 35v70" stroke="url(#shieldGrad)" stroke-width="1.5" opacity="0.3"/>
+              <path d="M30 55h60" stroke="url(#shieldGrad)" stroke-width="1.5" opacity="0.3"/>
+              <circle cx="60" cy="65" r="18" stroke="url(#shieldGrad)" stroke-width="2" fill="none" opacity="0.6"/>
+              <circle cx="60" cy="65" r="6" fill="url(#shieldGrad)" opacity="0.8"/>
+              <path d="M42 65h-18M78 65h18M60 47v-18M60 83v18" stroke="url(#shieldGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.4"/>
+              <circle cx="24" cy="65" r="3" fill="#00d4ff" opacity="0.5"/>
+              <circle cx="96" cy="65" r="3" fill="#c026d3" opacity="0.5"/>
+              <circle cx="60" cy="29" r="3" fill="#00d4ff" opacity="0.5"/>
+              <circle cx="60" cy="101" r="3" fill="#c026d3" opacity="0.5"/>
+            </svg>
+            <div class="welcome__icon-glow"></div>
+          </div>
+          <h1 class="welcome__title">VPN Installer</h1>
+          <p class="welcome__subtitle">Автоматическая установка VPN на сервер и настройка роутера OpenWrt</p>
+
+          <div class="welcome__protocols">
+            <div class="protocol-preview">
+              <div class="protocol-preview__icon">
+                <svg viewBox="0 0 32 32" fill="none"><path d="M16 4l-10 5v8c0 7 4.5 13.5 10 16 5.5-2.5 10-9 10-16v-8l-10-5z" stroke="#00d4ff" stroke-width="1.8" fill="rgba(0,212,255,0.08)"/><path d="M12 16l3 3 6-6" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="protocol-preview__info">
+                <h3>AmneziaWG 2.0</h3>
+                <p>Быстрый обфусцированный туннель</p>
+              </div>
+            </div>
+            <div class="protocol-preview">
+              <div class="protocol-preview__icon">
+                <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="10" stroke="#c026d3" stroke-width="1.8" fill="rgba(192,38,211,0.08)"/><ellipse cx="16" cy="16" rx="4" ry="10" stroke="#c026d3" stroke-width="1.2"/><path d="M6 16h20M7.5 11h17M7.5 21h17" stroke="#c026d3" stroke-width="1" opacity="0.5"/></svg>
+              </div>
+              <div class="protocol-preview__info">
+                <h3>NaiveProxy</h3>
+                <p>Имитация браузера Chrome</p>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn--primary btn--glow" id="btnStart">
+            <span>Начать установку</span>
+            <svg class="btn__arrow" viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ───── STEP 2: SERVER CONNECTION ───── -->
+      <section class="step" id="step-1">
+        <div class="step__header">
+          <h2 class="step__title">Подключение к серверу</h2>
+          <p class="step__desc">Введите данные для SSH-подключения к вашему VPS</p>
+        </div>
+
+        <div class="card card--glass">
+          <div class="form-grid">
+            <div class="form-group form-group--wide">
+              <label class="form-label" for="vpsHost">IP-адрес сервера</label>
+              <input class="form-input" type="text" id="vpsHost" placeholder="Например: 203.0.113.10" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="vpsPort">SSH-порт</label>
+              <input class="form-input" type="number" id="vpsPort" value="22" min="1" max="65535" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="vpsUser">Имя пользователя</label>
+              <input class="form-input" type="text" id="vpsUser" value="root" autocomplete="off" />
+            </div>
+            <div class="form-group form-group--wide">
+              <label class="form-label">Аутентификация</label>
+              <div class="auth-toggle" id="authToggle">
+                <button class="auth-toggle__btn auth-toggle__btn--active" data-auth="password">
+                  <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="9" width="14" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 9V6a3 3 0 0 1 6 0v3" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="13" r="1" fill="currentColor"/></svg>
+                  Пароль
+                </button>
+                <button class="auth-toggle__btn" data-auth="key">
+                  <svg viewBox="0 0 20 20" fill="none"><path d="M12.5 3.5a4 4 0 0 0-5.66 5.66l-3.84 3.84v3h3v-2h2v-2h2l1.5-1.5a4 4 0 0 0 .99-6.99z" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="7" r="1" fill="currentColor"/></svg>
+                  SSH-ключ
+                </button>
+              </div>
+            </div>
+            <div class="form-group form-group--wide" id="passwordGroup">
+              <label class="form-label" for="vpsPassword">Пароль</label>
+              <div class="input-wrapper">
+                <input class="form-input" type="password" id="vpsPassword" placeholder="Пароль от сервера" autocomplete="off" />
+                <button class="input-eye" id="toggleVpsPass" type="button" aria-label="Показать пароль">
+                  <svg viewBox="0 0 20 20" fill="none"><path d="M1 10s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.5"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-group form-group--wide hidden" id="keyGroup">
+              <label class="form-label" for="vpsKey">Приватный ключ</label>
+              <div class="key-file-row" style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+                <button class="btn btn--ghost" id="btnPickKey" type="button">
+                  <svg viewBox="0 0 20 20" fill="none"><path d="M3 5a2 2 0 0 1 2-2h3l2 2h5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z" stroke="currentColor" stroke-width="1.5"/></svg>
+                  Выбрать файл…
+                </button>
+                <span id="keyFilePath" style="color:#8a8aa0; font-size:13px; font-family:'JetBrains Mono',monospace; word-break:break-all;"></span>
+              </div>
+              <textarea class="form-textarea" id="vpsKey" rows="4" placeholder="…или вставьте содержимое ключа вручную" spellcheck="false"></textarea>
+            </div>
+          </div>
+
+          <div class="connection-status" id="vpsStatus">
+            <span class="status-dot status-dot--disconnected" id="vpsDot"></span>
+            <span class="status-text" id="vpsStatusText">Не подключено</span>
+          </div>
+
+          <div class="error-banner hidden" id="vpsError">
+            <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v5M10 13.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span id="vpsErrorText"></span>
+          </div>
+        </div>
+
+        <div class="step__actions">
+          <button class="btn btn--ghost" id="btnBackToWelcome">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M16 10H4m4 4l-4-4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Назад
+          </button>
+          <div class="step__actions-right">
+            <button class="btn btn--accent" id="btnConnectVPS">
+              <span class="btn__spinner hidden" id="vpsSpinner"></span>
+              Подключиться
+            </button>
+            <button class="btn btn--primary" id="btnToProtocols" disabled>
+              Далее
+              <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───── STEP 3: PROTOCOL SELECTION ───── -->
+      <section class="step" id="step-2">
+        <div class="step__header">
+          <h2 class="step__title">Выбор протоколов</h2>
+          <p class="step__desc">Выберите VPN-протоколы для установки на сервер</p>
+        </div>
+
+        <div class="protocol-cards">
+          <!-- AWG -->
+          <div class="protocol-card protocol-card--selected protocol-card--locked" id="cardAWG">
+            <div class="protocol-card__header">
+              <div class="protocol-card__icon protocol-card__icon--cyan">
+                <svg viewBox="0 0 32 32" fill="none"><path d="M16 4l-10 5v8c0 7 4.5 13.5 10 16 5.5-2.5 10-9 10-16v-8l-10-5z" stroke="currentColor" stroke-width="1.8"/><path d="M12 16l3 3 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="protocol-card__title">
+                <h3>AmneziaWG 2.0</h3>
+                <div class="protocol-card__badges">
+                  <span class="badge badge--cyan">UDP · Порт 443</span>
+                </div>
+              </div>
+              <div class="protocol-card__check protocol-card__check--on">
+                <svg viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="4" stroke="currentColor" stroke-width="1.5"/><path d="M6 10l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+            </div>
+            <p class="protocol-card__desc">Обфусцированный WireGuard. Основной туннель для роутера.</p>
+            <div class="protocol-card__lock-badge">
+              <svg viewBox="0 0 16 16" fill="none"><path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/></svg>
+              Всегда включён
+            </div>
+          </div>
+
+          <!-- Naive -->
+          <div class="protocol-card" id="cardNaive">
+            <div class="protocol-card__header">
+              <div class="protocol-card__icon protocol-card__icon--pink">
+                <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="1.8"/><ellipse cx="16" cy="16" rx="4" ry="10" stroke="currentColor" stroke-width="1.2"/><path d="M6 16h20M7.5 11h17M7.5 21h17" stroke="currentColor" stroke-width="1" opacity="0.5"/></svg>
+              </div>
+              <div class="protocol-card__title">
+                <h3>NaiveProxy</h3>
+                <div class="protocol-card__badges">
+                  <span class="badge badge--pink">TCP · Порт 2053 · Нужен домен</span>
+                </div>
+              </div>
+              <div class="protocol-card__check protocol-card__check--off">
+                <svg viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="4" stroke="currentColor" stroke-width="1.5"/></svg>
+              </div>
+            </div>
+            <p class="protocol-card__desc">Имитирует браузер Chrome. Требует доменное имя.</p>
+
+            <div class="protocol-card__extra hidden" id="naiveExtra">
+              <div class="alert alert--warning">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M10 2l8.66 15H1.34L10 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8v4M10 14.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <span>Для NaiveProxy необходимо доменное имя, привязанное к IP сервера. Без домена NaiveProxy не будет установлен.</span>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="naiveDomain">Доменное имя</label>
+                <input class="form-input" type="text" id="naiveDomain" placeholder="Например: vpn.example.com" autocomplete="off" spellcheck="false" />
+                <p style="margin-top:8px; font-size:13px; color:#8a8aa0;">Нет своего домена? Бесплатное можно получить на <a href="#" id="linkDynu" style="color:#00d4ff; cursor:pointer; text-decoration:none;">dynu.com</a> — заведи поддомен и направь его A-запись на IP сервера.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <p class="step__note">AmneziaWG устанавливается всегда как основной VPN-протокол</p>
+
+        <div class="step__actions">
+          <button class="btn btn--ghost" id="btnBackToServer">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M16 10H4m4 4l-4-4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Назад
+          </button>
+          <button class="btn btn--primary btn--glow" id="btnInstall">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v10m0 0l-3-3m3 3l3-3M4 15v2h12v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Установить
+          </button>
+        </div>
+      </section>
+
+      <!-- ───── STEP 4: SERVER INSTALLATION ───── -->
+      <section class="step" id="step-3">
+        <div class="step__header">
+          <h2 class="step__title">Установка на сервер</h2>
+          <p class="step__desc">Идёт установка VPN-протоколов</p>
+        </div>
+
+        <div class="install-statuses" id="serverStatuses">
+          <div class="install-status" id="installAWG" data-protocol="awg">
+            <div class="install-status__icon protocol-card__icon--cyan">
+              <svg viewBox="0 0 32 32" fill="none"><path d="M16 4l-10 5v8c0 7 4.5 13.5 10 16 5.5-2.5 10-9 10-16v-8l-10-5z" stroke="currentColor" stroke-width="1.8"/><path d="M12 16l3 3 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <span class="install-status__name">AmneziaWG 2.0</span>
+            <span class="status-badge status-badge--waiting" id="statusAWG">Ожидание</span>
+          </div>
+          <div class="install-status" id="installNaive" data-protocol="naive">
+            <div class="install-status__icon protocol-card__icon--pink">
+              <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="1.8"/><ellipse cx="16" cy="16" rx="4" ry="10" stroke="currentColor" stroke-width="1.2"/><path d="M6 16h20M7.5 11h17M7.5 21h17" stroke="currentColor" stroke-width="1" opacity="0.5"/></svg>
+            </div>
+            <span class="install-status__name">NaiveProxy</span>
+            <span class="status-badge status-badge--waiting" id="statusNaive">Ожидание</span>
+          </div>
+        </div>
+
+        <div class="terminal" id="serverTerminal">
+          <div class="terminal__header">
+            <div class="terminal__dots">
+              <span></span><span></span><span></span>
+            </div>
+            <span class="terminal__title">Лог установки</span>
+          </div>
+          <div class="terminal__body" id="serverLog"></div>
+        </div>
+
+        <div class="progress-bar" id="serverProgress">
+          <div class="progress-bar__fill" id="serverProgressFill"></div>
+          <span class="progress-bar__label" id="serverProgressLabel">0%</span>
+        </div>
+
+        <div class="step__actions">
+          <div></div>
+          <button class="btn btn--primary hidden" id="btnToRouter">
+            Далее
+            <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ───── STEP 5: ROUTER CONNECTION ───── -->
+      <section class="step" id="step-4">
+        <div class="step__header">
+          <h2 class="step__title">Подключение к роутеру</h2>
+          <p class="step__desc">Введите данные для подключения к OpenWrt роутеру</p>
+        </div>
+
+        <div class="card card--glass">
+          <div class="form-grid">
+            <div class="form-group form-group--wide">
+              <label class="form-label" for="routerHost">IP-адрес роутера</label>
+              <input class="form-input" type="text" id="routerHost" value="192.168.1.1" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="routerPort">SSH-порт</label>
+              <input class="form-input" type="number" id="routerPort" value="22" min="1" max="65535" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="routerPassword">Пароль</label>
+              <div class="input-wrapper">
+                <input class="form-input" type="password" id="routerPassword" placeholder="Пароль от роутера" autocomplete="off" />
+                <button class="input-eye" id="toggleRouterPass" type="button" aria-label="Показать пароль">
+                  <svg viewBox="0 0 20 20" fill="none"><path d="M1 10s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.5"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="info-card">
+            <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M10 9v5M10 6.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span>Роутер должен работать на OpenWrt и быть доступен по SSH</span>
+          </div>
+
+          <div class="connection-status" id="routerStatus">
+            <span class="status-dot status-dot--disconnected" id="routerDot"></span>
+            <span class="status-text" id="routerStatusText">Не подключено</span>
+          </div>
+
+          <div class="error-banner hidden" id="routerError">
+            <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v5M10 13.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span id="routerErrorText"></span>
+          </div>
+        </div>
+
+        <div class="step__actions">
+          <button class="btn btn--ghost" id="btnBackToInstall">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M16 10H4m4 4l-4-4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Назад
+          </button>
+          <div class="step__actions-right">
+            <button class="btn btn--accent" id="btnConnectRouter">
+              <span class="btn__spinner hidden" id="routerSpinner"></span>
+              Подключиться
+            </button>
+            <button class="btn btn--primary" id="btnToConfig" disabled>
+              Далее
+              <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───── STEP 6: ROUTER CONFIGURATION ───── -->
+      <section class="step" id="step-5">
+        <div class="step__header">
+          <h2 class="step__title">Настройка роутера</h2>
+          <p class="step__desc">Конфигурация VPN-клиентов на OpenWrt</p>
+        </div>
+
+        <div class="install-statuses" id="routerStatuses">
+          <div class="install-status" data-protocol="awg-client">
+            <div class="install-status__icon protocol-card__icon--cyan">
+              <svg viewBox="0 0 32 32" fill="none"><path d="M16 4l-10 5v8c0 7 4.5 13.5 10 16 5.5-2.5 10-9 10-16v-8l-10-5z" stroke="currentColor" stroke-width="1.8"/><path d="M12 16l3 3 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <span class="install-status__name">AWG Client</span>
+            <span class="status-badge status-badge--waiting" id="statusAWGClient">Ожидание</span>
+          </div>
+          <div class="install-status" data-protocol="naive-client">
+            <div class="install-status__icon protocol-card__icon--pink">
+              <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="1.8"/><ellipse cx="16" cy="16" rx="4" ry="10" stroke="currentColor" stroke-width="1.2"/><path d="M6 16h20" stroke="currentColor" stroke-width="1" opacity="0.5"/></svg>
+            </div>
+            <span class="install-status__name">Naive Client</span>
+            <span class="status-badge status-badge--waiting" id="statusNaiveClient">Ожидание</span>
+          </div>
+          <div class="install-status" data-protocol="pbr">
+            <div class="install-status__icon protocol-card__icon--cyan">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+            </div>
+            <span class="install-status__name">PBR Routing</span>
+            <span class="status-badge status-badge--waiting" id="statusPBR">Ожидание</span>
+          </div>
+          <div class="install-status" id="failover-client" data-protocol="failover-client">
+            <div class="install-status__icon protocol-card__icon--emerald">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div class="install-status__name">Failover Service</div>
+            <div class="status-badge status-badge--waiting" id="statusFailover">Ожидание</div>
+          </div>
+        </div>
+
+        <div class="terminal" id="routerTerminal">
+          <div class="terminal__header">
+            <div class="terminal__dots">
+              <span></span><span></span><span></span>
+            </div>
+            <span class="terminal__title">Лог настройки</span>
+          </div>
+          <div class="terminal__body" id="routerLog"></div>
+        </div>
+
+        <div class="progress-bar" id="routerProgress">
+          <div class="progress-bar__fill" id="routerProgressFill"></div>
+          <span class="progress-bar__label" id="routerProgressLabel">0%</span>
+        </div>
+
+        <div class="step__actions">
+          <div></div>
+          <button class="btn btn--primary hidden" id="btnToComplete">
+            Далее
+            <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ───── STEP 7: COMPLETE ───── -->
+      <section class="step" id="step-6">
+        <div class="complete">
+          <div class="complete__check">
+            <svg class="checkmark-svg" viewBox="0 0 80 80" fill="none">
+              <circle class="checkmark-circle" cx="40" cy="40" r="36" stroke="url(#checkGrad)" stroke-width="3"/>
+              <path class="checkmark-path" d="M24 42l10 10 22-24" stroke="url(#checkGrad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <defs>
+                <linearGradient id="checkGrad" x1="0" y1="0" x2="80" y2="80">
+                  <stop offset="0%" stop-color="#00d4ff"/>
+                  <stop offset="100%" stop-color="#7c3aed"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+
+          <h2 class="complete__title">Установка завершена!</h2>
+          <p class="complete__subtitle">VPN успешно настроен на сервере и роутере</p>
+
+          <div class="summary-cards">
+            <div class="summary-card">
+              <h4 class="summary-card__title">
+                <svg viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M6 20v-4h8v4" stroke="currentColor" stroke-width="1.5"/><path d="M2 20h16" stroke="currentColor" stroke-width="1.5"/></svg>
+                Сервер
+              </h4>
+              <ul class="summary-card__list" id="summaryServer"></ul>
+            </div>
+            <div class="summary-card">
+              <h4 class="summary-card__title">
+                <svg viewBox="0 0 20 20" fill="none"><rect x="1" y="5" width="18" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 8v4M8 7v6M11 8v4M14 7v6" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
+                Роутер
+              </h4>
+              <ul class="summary-card__list" id="summaryRouter"></ul>
+            </div>
+            <div class="summary-card">
+              <h4 class="summary-card__title">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M4 16h6l3-8 4 16 3-8h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" transform="translate(-2,-4) scale(0.85)"/></svg>
+                PBR
+              </h4>
+              <p class="summary-card__text">Российские IP обходят VPN</p>
+            </div>
+          </div>
+
+          <div class="credentials-section">
+            <button class="credentials-toggle" id="credentialsToggle">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Показать учётные данные
+            </button>
+            <div class="credentials-body hidden" id="credentialsBody">
+              <div class="credentials-block" id="credAWG">
+                <h5>AmneziaWG</h5>
+                <pre id="credAWGContent"></pre>
+              </div>
+              <div class="credentials-block hidden" id="credNaive">
+                <h5>NaiveProxy</h5>
+                <pre id="credNaiveContent"></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="complete__actions">
+            <button class="btn btn--accent" id="btnTestVPN">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 2v4M10 14v4M18 10h-4M6 10H2M15.66 4.34l-2.83 2.83M7.17 12.83l-2.83 2.83M15.66 15.66l-2.83-2.83M7.17 7.17L4.34 4.34" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <span id="testVPNText">Проверить VPN</span>
+              <span class="btn__spinner hidden" id="testSpinner"></span>
+            </button>
+            <button class="btn btn--primary btn--glow" id="btnFinish">
+              Готово
+            </button>
+          </div>
+
+          <div class="test-result hidden" id="testResult">
+            <span id="testResultText"></span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Background decorations -->
+    <div class="bg-orb bg-orb--1"></div>
+    <div class="bg-orb bg-orb--2"></div>
+    <div class="bg-orb bg-orb--3"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
