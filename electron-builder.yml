@@ -35,6 +35,8 @@ mac:
 # Linux: AppImage (portable) + .deb
 linux:
   category: Network
+  # Required for the .deb Maintainer field. Change to your own name/email if you like.
+  maintainer: Rasteo123 <Rasteo123@users.noreply.github.com>
   target:
     - AppImage
     - deb
