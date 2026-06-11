@@ -17,3 +17,19 @@ test('builds context with defaults and supplied inputs', () => {
   assert.deepStrictEqual(ctx.results, {});
   assert.deepStrictEqual(ctx.backup, {});
 });
+
+test('rejects hosts and domains that could smuggle shell into root commands', () => {
+  assert.throws(() => createInstallContext({ vps: { host: '1.2.3.4; reboot' } }), /host/i);
+  assert.throws(() => createInstallContext({ router: { host: '192.168.1.1`id`' } }), /host/i);
+  assert.throws(
+    () => createInstallContext({ vps: { host: '198.51.100.7' }, naiveDomain: 'ex.com$(x)' }),
+    /домен|domain/i,
+  );
+  assert.throws(() => createInstallContext({ vps: { host: '198.51.100.7', port: '99999' } }), /port/i);
+});
+
+test('omitted host/domain stay undefined (router-only phase context)', () => {
+  const ctx = createInstallContext({});
+  assert.strictEqual(ctx.inputs.vps.host, undefined);
+  assert.strictEqual(ctx.inputs.naiveDomain, undefined);
+});

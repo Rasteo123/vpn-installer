@@ -1,5 +1,9 @@
+const { assertHost, assertDomain, assertPort } = require('./config/validate');
+
 // Single shared state object for an install run. Device-specific values come
 // only from `inputs`; `results` is filled by steps and returned to the UI.
+// Hosts/domain/ports are validated here because they end up inside root
+// shell commands on the VPS and the router.
 function createInstallContext(input = {}) {
   const vps = input.vps || {};
   const router = input.router || {};
@@ -7,8 +11,8 @@ function createInstallContext(input = {}) {
   return {
     inputs: {
       vps: {
-        host: vps.host,
-        port: vps.port || 22,
+        host: vps.host === undefined ? undefined : assertHost(vps.host, 'VPS host'),
+        port: assertPort(vps.port || 22, 'VPS port'),
         username: vps.username || 'root',
         auth: vps.auth || (vps.privateKey ? 'key' : 'password'),
         password: vps.password,
@@ -16,8 +20,8 @@ function createInstallContext(input = {}) {
         passphrase: vps.passphrase,
       },
       router: {
-        host: router.host,
-        port: router.port || 22,
+        host: router.host === undefined ? undefined : assertHost(router.host, 'Router host'),
+        port: assertPort(router.port || 22, 'Router port'),
         username: router.username || 'root',
         password: router.password,
       },
@@ -25,7 +29,7 @@ function createInstallContext(input = {}) {
         awg: true,
         naive: protocols.naive !== false,
       },
-      naiveDomain: input.naiveDomain,
+      naiveDomain: input.naiveDomain === undefined ? undefined : assertDomain(input.naiveDomain, 'Домен NaiveProxy'),
     },
     sessions: { vps: null, router: null },
     results: {},
