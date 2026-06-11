@@ -45,7 +45,7 @@ async function main() {
     if (e.type === 'step-fail') console.log(`✘ ${e.stepId} FAILED (${e.phase || 'execute'}): ${e.error}`);
   });
 
-  const res = await orch.run(steps, ctx, { rollbackOnFailure: false });
+  const res = await orch.run(steps, ctx, { preflightAll: true, rollbackOnFailure: false });
   vps.disconnect();
 
   console.log('\n--- results ---');

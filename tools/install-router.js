@@ -12,6 +12,7 @@ const { routerNaive } = require('../src/main/steps/router-naive');
 const { routerPbr } = require('../src/main/steps/router-pbr');
 const { routerFailover } = require('../src/main/steps/router-failover');
 const { routerVerify } = require('../src/main/steps/router-verify');
+const { runRouterSteps } = require('../src/main/steps/router-run');
 
 function required(n) { const v = process.env[n]; if (!v) throw new Error(`Missing env ${n}`); return v; }
 
@@ -38,18 +39,17 @@ async function main() {
     if (e.type === 'step-fail') console.log(`✘ ${e.stepId} FAILED (${e.phase || 'execute'}): ${e.error}`);
   });
 
-  const res = await orch.run(steps, ctx, { preflightAll: true, rollbackOnFailure: true });
-
-  if (!res.ok) {
-    console.log('\n⚠ Failure — restoring router from backup...');
-    try { await restoreRouter(ctx); console.log('Router restored from backup.'); }
-    catch (e) { console.log('RESTORE FAILED: ' + e.message + '\nManual: uci import <pkg> < /root/vpn-installer-backup-latest.<pkg>'); }
+  const out = await runRouterSteps(orch, steps, ctx, { restoreRouter });
+  if (out.ok === false) {
+    console.log(`\n⚠ Failure: ${out.error && out.error.message}`);
+    if (out.restored) console.log('Router restored from backup.');
+    else console.log('RESTORE FAILED: ' + out.restoreError + '\nManual: uci import <pkg> < /root/vpn-installer-backup-latest.<pkg> && uci commit <pkg> (network, firewall, pbr); then /etc/init.d/network restart');
   }
 
   router.disconnect();
   console.log('\n--- results ---');
   console.log(JSON.stringify(ctx.results, null, 2));
-  process.exit(res.ok ? 0 : 1);
+  process.exit(out.ok ? 0 : 1);
 }
 
 main().catch((e) => { console.error('install-router failed:', e.message); process.exit(1); });

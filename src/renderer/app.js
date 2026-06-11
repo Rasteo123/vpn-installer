@@ -170,7 +170,11 @@ document.addEventListener('DOMContentLoaded', () => {
     goToStep(5);
     const res = await api.installRouter({ router: state.router, vpsHost: state.vps.host });
     if (res.ok) { state.results = { ...state.results, ...res.results }; $('btnToComplete').classList.remove('hidden'); }
-    else addLog('routerLog', `Настройка прервана: ${res.error || ''} (роутер восстановлен из backup)`, 'error');
+    else if (res.restored) addLog('routerLog', `Настройка прервана: ${res.error || ''} — роутер восстановлен из бэкапа.`, 'error');
+    else {
+      addLog('routerLog', `Настройка прервана: ${res.error || ''} — АВТОВОССТАНОВЛЕНИЕ НЕ УДАЛОСЬ.`, 'error');
+      addLog('routerLog', 'Восстановите вручную по SSH: uci import network < /root/vpn-installer-backup-latest.network && uci commit network && /etc/init.d/network restart (то же для firewall, pbr).', 'error');
+    }
   });
   $('btnToComplete').addEventListener('click', () => { goToStep(6); populateSummary(); });
 

@@ -84,3 +84,23 @@ test('verify failure triggers rollback of that step', async () => {
   assert.strictEqual(res.ok, false);
   assert.deepStrictEqual(order, ['a:preflight', 'a:execute', 'a:verify', 'a:rollback']);
 });
+
+test('an already-applied step is skipped (no execute/verify) but counts as completed', async () => {
+  const order = [];
+  const events = [];
+  const orch = new Orchestrator((e) => events.push(e));
+  const ctx = createInstallContext({});
+
+  const applied = makeStep({
+    id: 'a', target: 'vps',
+    isApplied: async () => true,
+    preflight: async () => order.push('a:preflight'),
+    execute: async () => { throw new Error('execute must not run for an applied step'); },
+    verify: async () => { throw new Error('verify must not run for an applied step'); },
+  });
+
+  const res = await orch.run([applied, fakeStep(order, 'b')], ctx);
+  assert.deepStrictEqual(order, ['a:preflight', 'b:preflight', 'b:execute', 'b:verify']);
+  assert.deepStrictEqual(res, { ok: true, completed: ['a', 'b'] });
+  assert.ok(events.some((e) => e.type === 'step-skip' && e.stepId === 'a'));
+});

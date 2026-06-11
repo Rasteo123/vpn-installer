@@ -13,12 +13,18 @@ const { routerNaive } = require('../steps/router-naive');
 const { routerPbr } = require('../steps/router-pbr');
 const { routerFailover } = require('../steps/router-failover');
 const { routerVerify } = require('../steps/router-verify');
+const { runRouterSteps } = require('../steps/router-run');
+
+const MANUAL_RESTORE_HINT =
+  'Manual restore: uci import network < /root/vpn-installer-backup-latest.network && uci commit network && /etc/init.d/network restart (same for firewall, pbr).';
 
 // One context carried across the server and router phases of a session.
 let current = null;
 
+const { assertHost, assertPort } = require('../config/validate');
+
 function vpsConnectConfig(vps) {
-  const cfg = { host: vps.host, port: Number(vps.port) || 22, username: vps.username || 'root' };
+  const cfg = { host: assertHost(vps.host, 'VPS host'), port: assertPort(vps.port || 22, 'VPS port'), username: vps.username || 'root' };
   if (vps.auth === 'key') {
     cfg.privateKey = vps.keyPath ? fs.readFileSync(vps.keyPath, 'utf8') : vps.privateKey;
     if (vps.passphrase) cfg.passphrase = vps.passphrase;
@@ -57,18 +63,21 @@ function registerHandlers() {
   ipcMain.handle('connect-router', async (_e, router) => {
     const s = new SSHSession();
     try {
-      await s.connect({ host: router.host, port: Number(router.port) || 22, username: 'root', password: router.password });
+      await s.connect({ host: assertHost(router.host, 'Router host'), port: assertPort(router.port || 22, 'Router port'), username: 'root', password: router.password });
       s.disconnect();
       return { ok: true };
     } catch (err) { return { ok: false, error: err.message }; }
   });
 
   ipcMain.handle('install-server', async (event, config) => {
-    const ctx = createInstallContext({
-      vps: { ...config.vps, auth: config.vps.auth },
-      naiveDomain: config.naiveDomain,
-      protocols: { naive: !!config.naiveDomain },
-    });
+    let ctx;
+    try {
+      ctx = createInstallContext({
+        vps: { ...config.vps, auth: config.vps.auth },
+        naiveDomain: config.naiveDomain,
+        protocols: { naive: !!config.naiveDomain },
+      });
+    } catch (e) { return { ok: false, error: e.message }; }
     ctx.inputs.certStaging = !!config.certStaging;
     ctx.log = (m) => event.sender.send('install-log', { phase: 'server', message: m });
 
@@ -81,15 +90,18 @@ function registerHandlers() {
     const steps = [serverAwg];
     if (ctx.inputs.protocols.naive) steps.push(serverNaive);
     const orch = new Orchestrator((e) => event.sender.send('install-event', e));
-    const res = await orch.run(steps, ctx, { rollbackOnFailure: false });
+    // preflightAll: catch a misconfigured naive domain (DNS) before the long AWG install.
+    const res = await orch.run(steps, ctx, { preflightAll: true, rollbackOnFailure: false });
     vps.disconnect();
     return { ok: res.ok, error: res.error && res.error.message, results: scrub(ctx.results) };
   });
 
   ipcMain.handle('install-router', async (event, config) => {
     const ctx = current || createInstallContext({});
-    ctx.inputs.router = { host: config.router.host, port: Number(config.router.port) || 22, username: 'root', password: config.router.password };
-    if (config.vpsHost) ctx.inputs.vps.host = config.vpsHost;
+    try {
+      ctx.inputs.router = { host: assertHost(config.router.host, 'Router host'), port: assertPort(config.router.port || 22, 'Router port'), username: 'root', password: config.router.password };
+      if (config.vpsHost) ctx.inputs.vps.host = assertHost(config.vpsHost, 'VPS host');
+    } catch (e) { return { ok: false, error: e.message }; }
     ctx.log = (m) => event.sender.send('install-log', { phase: 'router', message: m });
 
     const router = new SSHSession();
@@ -99,13 +111,18 @@ function registerHandlers() {
 
     const steps = [routerBackup, routerAwg, routerNaive, routerPbr, routerFailover, routerVerify];
     const orch = new Orchestrator((e) => event.sender.send('install-event', e));
-    const res = await orch.run(steps, ctx, { preflightAll: true, rollbackOnFailure: true });
-    if (!res.ok) {
-      try { await restoreRouter(ctx); ctx.log('Router restored from backup.'); }
-      catch (e) { ctx.log('Restore FAILED: ' + e.message); }
+    const out = await runRouterSteps(orch, steps, ctx, { restoreRouter });
+    if (out.ok === false) {
+      if (out.restored) ctx.log('Router restored from backup.');
+      else { ctx.log('Restore FAILED: ' + (out.restoreError || 'unknown')); ctx.log(MANUAL_RESTORE_HINT); }
     }
     router.disconnect();
-    return { ok: res.ok, error: res.error && res.error.message, results: scrub(ctx.results) };
+    return {
+      ok: out.ok,
+      error: out.error && out.error.message,
+      restored: out.restored,
+      results: scrub(ctx.results),
+    };
   });
 }
 

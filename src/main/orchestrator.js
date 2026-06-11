@@ -32,6 +32,13 @@ class Orchestrator {
       this._emit({ type: 'step-start', stepId: step.id, index: i, total });
       try {
         if (!preflightAll) await step.preflight(ctx);
+        // Resume support: a step that reports itself already applied is left
+        // untouched and counted as done, so a re-run skips finished work.
+        if (await step.isApplied(ctx)) {
+          completed.push(step);
+          this._emit({ type: 'step-skip', stepId: step.id, index: i, total });
+          continue;
+        }
         await step.execute(ctx);
         await step.verify(ctx);
         completed.push(step);
