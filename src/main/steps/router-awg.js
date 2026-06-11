@@ -1,13 +1,25 @@
 const { makeStep } = require('./step');
 const { uciBatch, awgNetworkUci } = require('../config/uci');
 
-const AWG_PKGS = 'amneziawg-tools kmod-amneziawg luci-app-amneziawg';
+const AWG_PKGS = ['amneziawg-tools', 'kmod-amneziawg', 'luci-app-amneziawg'];
+// curl + jq + CA bundle are used by router.verify, router.pbr and the failover
+// daemon; a stock OpenWrt has only uclient-fetch, so install them up front.
+const TOOL_PKGS = ['curl', 'jq', 'ca-bundle'];
 
 // Idempotently add awg0 to the firewall 'wan' zone (works for named or
 // anonymous zone sections). JS plain string — shell vars must stay literal.
 const ADD_AWG0_TO_WAN =
   'for z in $(uci show firewall | grep -E "\\.name=.wan.$" | cut -d. -f1-2); do ' +
   'uci -q get "$z.network" | grep -qw awg0 || uci add_list "$z.network=awg0"; done';
+
+// Reverse of ADD_AWG0_TO_WAN: drop awg0 from whichever wan zone holds it.
+const DEL_AWG0_FROM_WAN =
+  'for z in $(uci show firewall | grep -E "\\.name=.wan.$" | cut -d. -f1-2); do ' +
+  'uci -q del_list "$z.network=awg0"; done';
+
+async function have(s, bin) {
+  return (await s.exec(`command -v ${bin}`)).code === 0;
+}
 
 // Configures the AmneziaWG client on the router using the server's keys.
 const routerAwg = makeStep({
@@ -30,11 +42,18 @@ const routerAwg = makeStep({
     const log = ctx.log || (() => {});
     const awg = ctx.results.awg;
 
-    if ((await s.exec('command -v awg')).code !== 0) {
-      log('Installing AmneziaWG packages...');
+    // Gather everything missing into one opkg run: AWG packages plus the shared
+    // CLI tools later steps depend on.
+    const pkgs = [];
+    const awgMissing = !(await have(s, 'awg'));
+    if (awgMissing) pkgs.push(...AWG_PKGS);
+    if (!(await have(s, 'curl')) || !(await have(s, 'jq'))) pkgs.push(...TOOL_PKGS);
+
+    if (pkgs.length) {
+      log(`Installing router packages: ${pkgs.join(' ')}...`);
       await s.exec('opkg update');
-      const r = await s.exec(`opkg install ${AWG_PKGS}`);
-      if ((await s.exec('command -v awg')).code !== 0) {
+      const r = await s.exec(`opkg install ${pkgs.join(' ')}`);
+      if (awgMissing && (await s.exec('command -v awg')).code !== 0) {
         throw new Error(`router.awg: package install failed: ${(r.stderr || '').slice(-200)}`);
       }
     }
@@ -70,7 +89,17 @@ const routerAwg = makeStep({
 
   async rollback(ctx) {
     const s = ctx.sessions.router;
-    await s.exec('uci -q delete network.awg0; uci -q delete network.@amneziawg_awg0[0]; uci commit network');
+    const vpsIp = ctx.inputs.vps.host || '';
+    // Drop the interface, the peer, the two awg0 split-default routes and the
+    // endpoint-bypass route (interface=wan, target=VPS) we added in execute.
+    const delRoutes =
+      'for r in $(uci show network | grep "=route$" | cut -d= -f1); do ' +
+      'ifc=$(uci -q get "$r.interface"); tgt=$(uci -q get "$r.target"); ' +
+      `if [ "$ifc" = "awg0" ] || { [ "$ifc" = "wan" ] && [ "$tgt" = "${vpsIp}" ]; }; then uci -q delete "$r"; fi; done`;
+    await s.exec('uci -q delete network.awg0; uci -q delete network.@amneziawg_awg0[0]');
+    await s.exec(delRoutes);
+    await s.exec(DEL_AWG0_FROM_WAN);
+    await s.exec('uci commit network && uci commit firewall');
   },
 });
 

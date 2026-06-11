@@ -31,6 +31,18 @@ if ! uci show firewall | grep -q "dest='naive_fwd'"; then
 fi
 `;
 
+// Reverse of SETUP_NAIVE_FWD: drop the named zone and its forwarding by name,
+// regardless of their anonymous section index.
+const TEARDOWN_NAIVE_FWD = `
+for f in $(uci show firewall | grep "=forwarding$" | cut -d= -f1); do
+  [ "$(uci -q get $f.dest)" = "naive_fwd" ] && uci -q delete $f
+done
+for z in $(uci show firewall | grep "=zone$" | cut -d= -f1); do
+  [ "$(uci -q get $z.name)" = "naive_fwd" ] && uci -q delete $z
+done
+uci commit firewall
+`;
+
 // Configures the NaiveProxy client (sing-box tun) on the router.
 const routerNaive = makeStep({
   id: 'router.naive',
@@ -57,13 +69,14 @@ const routerNaive = makeStep({
 
     log('Writing naive client config...');
     await s.exec('mkdir -p /etc/sing-box');
+    // The client config embeds the proxy password — keep it private.
     await s.writeFile(CONF, naiveClientJson({
       vpsIp: ctx.inputs.vps.host,
       username: n.username,
       password: n.password,
       domain: n.domain,
       naivePort: n.port,
-    }));
+    }), { mode: 0o600 });
     await s.writeFile(INITD, singBoxNaiveInitd());
     await s.exec(`chmod +x ${INITD}`);
 
@@ -92,6 +105,8 @@ const routerNaive = makeStep({
     const s = ctx.sessions.router;
     await s.exec(`${INITD} disable 2>/dev/null; ${INITD} stop 2>/dev/null; true`);
     await s.exec('uci -q delete network.tun_naive; uci commit network');
+    // Tear down the naive_fwd zone and the lan->naive_fwd forwarding we created.
+    await s.exec(TEARDOWN_NAIVE_FWD);
     await s.exec(`rm -f ${CONF} ${INITD}`);
   },
 });
