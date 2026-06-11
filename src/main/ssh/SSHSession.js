@@ -1,10 +1,33 @@
 const { Client } = require('ssh2');
 const { takeLines } = require('./line-buffer');
+const { KnownHosts, verifyHostKey } = require('./known-hosts');
+
+const DEFAULT_EXEC_TIMEOUT_MS = 300000;
 
 class SSHSession {
-  constructor() {
+  constructor(opts = {}) {
     this.conn = null;
     this.connected = false;
+    this.knownHosts = opts.knownHosts || new KnownHosts();
+    this._hostKeyError = null;
+  }
+
+  // ssh2 hostVerifier with trust-on-first-use semantics: the first key for
+  // host:port is remembered; a changed key is refused and the reason is kept
+  // so connect() can surface it instead of ssh2's generic handshake error.
+  _makeHostVerifier(host, port) {
+    this._hostKeyError = null;
+    return (keyBlob) => {
+      const res = verifyHostKey(this.knownHosts, host, port, keyBlob);
+      if (!res.ok) {
+        this._hostKeyError = new Error(
+          `Host key for ${host}:${port} CHANGED: expected ${res.expected}, got ${res.fingerprint}. ` +
+          `This may be a man-in-the-middle attack. If the server was genuinely reinstalled, ` +
+          `delete its entry from ${this.knownHosts.filePath} and connect again.`
+        );
+      }
+      return res.ok;
+    };
   }
 
   /**
@@ -40,7 +63,9 @@ class SSHSession {
         clearTimeout(timeout);
         this.connected = false;
         this.conn = null;
-        reject(new Error(`SSH connection error: ${err.message}`));
+        // A host-key mismatch surfaces as a generic handshake error in ssh2;
+        // report the real reason instead.
+        reject(this._hostKeyError || new Error(`SSH connection error: ${err.message}`));
       });
 
       conn.on('end', () => {
@@ -60,6 +85,7 @@ class SSHSession {
         readyTimeout: 30000,
         keepaliveInterval: 10000,
         keepaliveCountMax: 3,
+        hostVerifier: this._makeHostVerifier(config.host, config.port || 22),
       };
 
       if (config.privateKey) {
@@ -83,17 +109,22 @@ class SSHSession {
   /**
    * Execute single command, return { stdout, stderr, code }.
    * @param {string} command
+   * @param {Object} [opts]
+   * @param {number} [opts.timeoutMs=300000] - For long installs pass a bigger value.
    * @returns {Promise<{stdout: string, stderr: string, code: number}>}
    */
-  async exec(command) {
+  async exec(command, opts = {}) {
     if (!this.connected || !this.conn) {
       throw new Error('SSH session is not connected');
     }
 
+    const timeoutMs = opts.timeoutMs || DEFAULT_EXEC_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
+      let streamRef = null;
       const timeout = setTimeout(() => {
-        reject(new Error(`Command timed out after 300 seconds: ${command.substring(0, 80)}`));
-      }, 300000);
+        if (streamRef) { try { streamRef.close(); } catch { /* channel may be gone */ } }
+        reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)} seconds: ${command.substring(0, 80)}`));
+      }, timeoutMs);
 
       this.conn.exec(command, (err, stream) => {
         if (err) {
@@ -101,6 +132,7 @@ class SSHSession {
           reject(new Error(`Failed to execute command: ${err.message}`));
           return;
         }
+        streamRef = stream;
 
         let stdout = '';
         let stderr = '';
@@ -130,17 +162,22 @@ class SSHSession {
    * Execute command with streaming output via callback.
    * @param {string} command
    * @param {function(string): void} onData - Called for each line of output
+   * @param {Object} [opts]
+   * @param {number} [opts.timeoutMs=300000] - For long installs pass a bigger value.
    * @returns {Promise<{stdout: string, stderr: string, code: number}>}
    */
-  async execStream(command, onData) {
+  async execStream(command, onData, opts = {}) {
     if (!this.connected || !this.conn) {
       throw new Error('SSH session is not connected');
     }
 
+    const timeoutMs = opts.timeoutMs || DEFAULT_EXEC_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
+      let streamRef = null;
       const timeout = setTimeout(() => {
-        reject(new Error(`Command timed out after 300 seconds: ${command.substring(0, 80)}`));
-      }, 300000);
+        if (streamRef) { try { streamRef.close(); } catch { /* channel may be gone */ } }
+        reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)} seconds: ${command.substring(0, 80)}`));
+      }, timeoutMs);
 
       this.conn.exec(command, (err, stream) => {
         if (err) {
@@ -148,6 +185,7 @@ class SSHSession {
           reject(new Error(`Failed to execute command: ${err.message}`));
           return;
         }
+        streamRef = stream;
 
         let stdout = '';
         let stderr = '';
@@ -200,9 +238,11 @@ class SSHSession {
    * Write string content to remote file.
    * @param {string} remotePath
    * @param {string} content
+   * @param {Object} [opts]
+   * @param {number} [opts.mode] - File mode (e.g. 0o600) applied at create time.
    * @returns {Promise<void>}
    */
-  async writeFile(remotePath, content) {
+  async writeFile(remotePath, content, opts = {}) {
     if (!this.connected || !this.conn) {
       throw new Error('SSH session is not connected');
     }
@@ -214,7 +254,8 @@ class SSHSession {
           return;
         }
 
-        const writeStream = sftp.createWriteStream(remotePath);
+        const streamOpts = opts.mode !== undefined ? { mode: opts.mode } : {};
+        const writeStream = sftp.createWriteStream(remotePath, streamOpts);
 
         writeStream.on('error', (writeErr) => {
           sftp.end();

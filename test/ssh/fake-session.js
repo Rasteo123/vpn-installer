@@ -5,6 +5,7 @@ class FakeSSHSession {
     this.responses = responses;
     this.execed = [];
     this.written = {};
+    this.modes = {};
     this.connected = true;
   }
 
@@ -33,8 +34,9 @@ class FakeSSHSession {
     return res;
   }
 
-  async writeFile(remotePath, content) {
+  async writeFile(remotePath, content, opts = {}) {
     this.written[remotePath] = content;
+    if (opts.mode !== undefined) this.modes[remotePath] = opts.mode;
   }
 
   async readFile(remotePath) {

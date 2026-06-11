@@ -24,3 +24,11 @@ test('unmatched command returns empty success', async () => {
   const res = await s.exec('whatever');
   assert.deepStrictEqual(res, { stdout: '', stderr: '', code: 0 });
 });
+
+test('writeFile records an explicit mode for secret files', async () => {
+  const s = new FakeSSHSession();
+  await s.writeFile('/etc/secret.conf', 'body', { mode: 0o600 });
+  assert.strictEqual(s.modes['/etc/secret.conf'], 0o600);
+  await s.writeFile('/etc/plain.conf', 'body');
+  assert.strictEqual(s.modes['/etc/plain.conf'], undefined);
+});
