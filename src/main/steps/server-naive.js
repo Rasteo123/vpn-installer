@@ -1,10 +1,14 @@
 const { makeStep } = require('./step');
 const { naiveServerJson, singBoxNaiveService, nginxServerConf } = require('../config/templates');
 const { generateNaiveCreds } = require('../config/generate');
+const { openUfwPorts, closeUfwPorts } = require('./ufw');
 
 const NAIVE_JSON = '/etc/sing-box/naive.json';
 const NAIVE_UNIT = '/etc/systemd/system/sing-box-naive.service';
 const NGINX_CONF = '/etc/nginx/nginx.conf';
+const NGINX_BAK = '/etc/nginx/nginx.conf.vpn-installer.bak';
+const APT_TIMEOUT = { timeoutMs: 900000 };
+const UFW_PORTS = ['80/tcp', '443/tcp', '2053/tcp'];
 
 // Installs NaiveProxy (sing-box) on :2053 with a Let's Encrypt cert, plus an
 // nginx ACME(:80) + camouflage(:443) site for the domain.
@@ -31,8 +35,9 @@ const serverNaive = makeStep({
     const domain = ctx.inputs.naiveDomain;
 
     log('Installing nginx, certbot, sing-box...');
-    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get install -y nginx certbot');
-    const sb = await s.exec('bash -c "$(curl -fsSL https://sing-box.app/deb-install.sh)"');
+    await s.exec('dpkg --configure -a 2>/dev/null || true');
+    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get install -y nginx certbot', APT_TIMEOUT);
+    const sb = await s.exec('bash -c "$(curl -fsSL https://sing-box.app/deb-install.sh)"', APT_TIMEOUT);
     if ((await s.exec('command -v sing-box')).code !== 0) {
       throw new Error(`server.naive: sing-box install failed: ${sb.stderr.slice(-300)}`);
     }
@@ -48,9 +53,13 @@ const serverNaive = makeStep({
     log('Writing configs...');
     const creds = generateNaiveCreds();
     await s.exec('mkdir -p /etc/sing-box /var/www/html');
-    await s.writeFile(NAIVE_JSON, naiveServerJson({ username: creds.username, password: creds.password, domain }));
+    // naive.json holds the proxy password — keep it private.
+    await s.writeFile(NAIVE_JSON, naiveServerJson({ username: creds.username, password: creds.password, domain }), { mode: 0o600 });
     await s.writeFile(NAIVE_UNIT, singBoxNaiveService());
     await s.exec('rm -f /etc/nginx/sites-enabled/default');
+    // Preserve the distro's nginx.conf so a failed run can restore it instead
+    // of leaving the box with our config (or none). -n: don't clobber a prior backup.
+    await s.exec(`[ -f ${NGINX_CONF} ] && cp -n ${NGINX_CONF} ${NGINX_BAK} || true`);
     await s.writeFile(NGINX_CONF, nginxServerConf({ domain }));
 
     const chk = await s.exec(`sing-box check -c ${NAIVE_JSON}`);
@@ -62,6 +71,9 @@ const serverNaive = makeStep({
     await s.exec('systemctl daemon-reload');
     await s.exec('systemctl enable sing-box-naive && systemctl restart sing-box-naive');
     await s.exec('systemctl enable nginx && systemctl restart nginx');
+
+    // Open the HTTP/HTTPS/naive ports if a host firewall is active.
+    await openUfwPorts(s, UFW_PORTS);
 
     ctx.results.naive = { domain, username: creds.username, password: creds.password, port: 2053 };
     log('NaiveProxy + nginx installed.');
@@ -83,7 +95,11 @@ const serverNaive = makeStep({
   async rollback(ctx) {
     const s = ctx.sessions.vps;
     await s.exec('systemctl stop sing-box-naive nginx 2>/dev/null; systemctl disable sing-box-naive 2>/dev/null; true');
-    await s.exec(`rm -f ${NAIVE_JSON} ${NAIVE_UNIT} ${NGINX_CONF}; systemctl daemon-reload`);
+    await s.exec(`rm -f ${NAIVE_JSON} ${NAIVE_UNIT}`);
+    // Restore the original nginx.conf if we saved one; only remove ours otherwise.
+    await s.exec(`if [ -f ${NGINX_BAK} ]; then mv ${NGINX_BAK} ${NGINX_CONF}; else rm -f ${NGINX_CONF}; fi`);
+    await s.exec('systemctl daemon-reload');
+    await closeUfwPorts(s, UFW_PORTS);
   },
 });
 

@@ -1,9 +1,23 @@
 const { makeStep } = require('./step');
 const { awgServerConf, awgOverride } = require('../config/templates');
 const { generateObfuscation } = require('../config/generate');
+const { openUfwPorts, closeUfwPorts } = require('./ufw');
 
 const CONF = '/etc/amnezia/amneziawg/awg0.conf';
 const OVERRIDE_DIR = '/etc/systemd/system/awg-quick@awg0.service.d';
+const APT_TIMEOUT = { timeoutMs: 900000 }; // package installs can be slow
+const UFW_PORTS = ['443/udp'];
+
+// One server-side script that generates all keys, keeping each secret in a
+// shell variable so it never appears in a command argument (visible via `ps`).
+// `umask 077` guards the transient awg working files. The `# awg-keygen` marker
+// makes the single round-trip easy to assert on.
+const KEYGEN = `sh -c '# awg-keygen
+umask 077
+spriv=$(awg genkey); spub=$(echo "$spriv" | awg pubkey)
+cpriv=$(awg genkey); cpub=$(echo "$cpriv" | awg pubkey)
+psk=$(awg genpsk)
+printf "%s\\n%s\\n%s\\n%s\\n%s\\n" "$spriv" "$spub" "$cpriv" "$cpub" "$psk"'`;
 
 // Installs AmneziaWG on the Ubuntu VPS, generates keys, writes the config
 // (with iptables NAT in PostUp), and starts the service.
@@ -27,20 +41,22 @@ const serverAwg = makeStep({
     const log = ctx.log || (() => {});
 
     log('Installing AmneziaWG (apt + PPA)...');
-    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get update -y');
-    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common');
+    // Recover from any interrupted apt run (e.g. an earlier connection drop)
+    // so the install below doesn't fail on a broken dpkg state.
+    await s.exec('dpkg --configure -a 2>/dev/null || true');
+    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get update -y', APT_TIMEOUT);
+    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common', APT_TIMEOUT);
     await s.exec('add-apt-repository -y ppa:amnezia/ppa');
-    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get update -y');
-    const inst = await s.exec('DEBIAN_FRONTEND=noninteractive apt-get install -y amneziawg amneziawg-tools linux-headers-$(uname -r)');
+    await s.exec('DEBIAN_FRONTEND=noninteractive apt-get update -y', APT_TIMEOUT);
+    const inst = await s.exec('DEBIAN_FRONTEND=noninteractive apt-get install -y amneziawg amneziawg-tools linux-headers-$(uname -r)', APT_TIMEOUT);
     if (inst.code !== 0) throw new Error(`server.awg: package install failed: ${inst.stderr.slice(-300)}`);
 
     log('Generating keys...');
-    const serverPriv = (await s.exec('awg genkey')).stdout.trim();
-    const serverPub = (await s.exec(`echo '${serverPriv}' | awg pubkey`)).stdout.trim();
-    const clientPriv = (await s.exec('awg genkey')).stdout.trim();
-    const clientPub = (await s.exec(`echo '${clientPriv}' | awg pubkey`)).stdout.trim();
-    const psk = (await s.exec('awg genpsk')).stdout.trim();
-    if (!serverPub || !clientPub || !psk) throw new Error('server.awg: key generation returned empty output');
+    const keys = (await s.exec(KEYGEN)).stdout.trim().split('\n').map((l) => l.trim());
+    const [serverPriv, serverPub, clientPriv, clientPub, psk] = keys;
+    if (keys.length < 5 || !serverPub || !clientPub || !psk) {
+      throw new Error('server.awg: key generation returned incomplete output');
+    }
 
     const obfuscation = generateObfuscation();
     const wanIface = ctx.results.detected.wanIface;
@@ -53,13 +69,17 @@ const serverAwg = makeStep({
       wanIface,
       peerPublicKey: clientPub,
       presharedKey: psk,
-    }));
+    }), { mode: 0o600 });
     await s.writeFile(`${OVERRIDE_DIR}/override.conf`, awgOverride());
     await s.exec('echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-awg.conf && sysctl --system >/dev/null');
 
     log('Starting service...');
     await s.exec('systemctl daemon-reload');
     await s.exec('systemctl enable awg-quick@awg0 && systemctl restart awg-quick@awg0');
+
+    // The AWG config's PostUp adds an iptables ACCEPT, but a host firewall (ufw)
+    // still drops udp/443 on its own chain — open it there too when active.
+    await openUfwPorts(s, UFW_PORTS);
 
     ctx.results.awg = {
       serverPublicKey: serverPub,
@@ -91,6 +111,7 @@ const serverAwg = makeStep({
     const s = ctx.sessions.vps;
     await s.exec('systemctl stop awg-quick@awg0 2>/dev/null; systemctl disable awg-quick@awg0 2>/dev/null; true');
     await s.exec(`rm -rf /etc/amnezia/amneziawg ${OVERRIDE_DIR} /etc/sysctl.d/99-awg.conf`);
+    await closeUfwPorts(s, UFW_PORTS);
   },
 });
 
