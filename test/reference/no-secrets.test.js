@@ -36,3 +36,35 @@ test('no captured file leaks a secret', () => {
     }
   }
 });
+
+// Anything globally routable should have been turned into a token by the
+// snapshot redactor. Allow private/doc/loopback/multicast and the health-check.
+function octets(ip) { return ip.split('.').map(Number); }
+function isAllowlisted(ip) {
+  const [a, b] = octets(ip);
+  if (a === 10 || a === 127 || a === 0) return true;            // private / loopback / unspecified
+  if (a === 192 && b === 168) return true;                      // private
+  if (a === 172 && b >= 16 && b <= 31) return true;             // private
+  if (a === 169 && b === 254) return true;                      // link-local
+  if (a >= 224) return true;                                    // multicast / reserved
+  if (ip === '128.0.0.0') return true;                          // split-default route base (0.0.0.0/1 + 128.0.0.0/1)
+  if (a === 192 && b === 0) return true;                        // 192.0.2.0/24 doc
+  if (a === 198 && b === 51) return true;                       // 198.51.100.0/24 doc
+  if (a === 203 && b === 0) return true;                        // 203.0.113.0/24 doc
+  // Well-known public resolvers are generic infrastructure, not identifying.
+  if (['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9'].includes(ip)) return true;
+  return false;
+}
+
+test('no captured file leaks a globally-routable IP (must be redacted)', () => {
+  // Four dotted octets NOT embedded in a longer dotted-number run, so package
+  // versions like 6.6.119.1.0 don't read as IPs.
+  const IPV4 = /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
+  for (const file of walk(REFERENCE_DIR)) {
+    const body = fs.readFileSync(file, 'utf8');
+    for (const ip of body.match(IPV4) || []) {
+      if (octets(ip).some((o) => o > 255)) continue; // not a real IP (e.g. version string)
+      assert.ok(isAllowlisted(ip), `unredacted public IP ${ip} in ${path.relative(REFERENCE_DIR, file)}`);
+    }
+  }
+});

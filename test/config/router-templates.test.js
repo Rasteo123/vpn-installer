@@ -7,7 +7,7 @@ const r = require('../../src/main/config/router-templates');
 test('naiveClientJson reproduces the reference naive-client.json', () => {
   const out = r.naiveClientJson({
     vpsIp: '__VPS_IP__',
-    username: 'user_b3b9f7aff0d2dfc7',
+    username: '__NAIVE_USER__',
     password: '__REDACTED__',
     domain: '__DOMAIN__',
   });

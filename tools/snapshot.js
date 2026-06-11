@@ -8,7 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const SSHSession = require('../src/main/ssh/SSHSession');
 const { redactValues, redactFields } = require('../src/main/snapshot/redact');
+const { buildValueMap } = require('../src/main/snapshot/detect');
 const { VPS_CAPTURES, ROUTER_CAPTURES } = require('../src/main/snapshot/manifest');
+const { assertHost, assertPort } = require('../src/main/config/validate');
 
 const REFERENCE_DIR = path.join(__dirname, '..', 'reference');
 
@@ -20,8 +22,8 @@ function required(name) {
 
 function vpsConfigFromEnv() {
   const cfg = {
-    host: required('VPS_HOST'),
-    port: Number(process.env.VPS_PORT || 22),
+    host: assertHost(required('VPS_HOST'), 'VPS_HOST'),
+    port: assertPort(process.env.VPS_PORT || 22, 'VPS_PORT'),
     username: process.env.VPS_USER || 'root',
   };
   if (process.env.VPS_KEY) cfg.privateKey = fs.readFileSync(process.env.VPS_KEY, 'utf8');
@@ -31,30 +33,25 @@ function vpsConfigFromEnv() {
 
 function routerConfigFromEnv() {
   return {
-    host: required('ROUTER_HOST'),
-    port: Number(process.env.ROUTER_PORT || 22),
+    host: assertHost(required('ROUTER_HOST'), 'ROUTER_HOST'),
+    port: assertPort(process.env.ROUTER_PORT || 22, 'ROUTER_PORT'),
     username: process.env.ROUTER_USER || 'root',
     password: required('ROUTER_PASS'),
   };
 }
 
 async function detectValueMap(vps, router) {
-  // Auto-detect device-identifying values so nothing is hardcoded.
-  const map = {};
-  const vpsIp = (await vps.exec('curl -s -4 ifconfig.me 2>/dev/null || true')).stdout.trim()
-    || process.env.VPS_HOST;
-  if (vpsIp) map[vpsIp] = '__VPS_IP__';
-
-  const wanIp = (await router.exec('uci -q get network.wan.ipaddr || true')).stdout.trim();
-  if (wanIp) map[wanIp] = '__ROUTER_WAN_IP__';
-  const lanIp = (await router.exec('uci -q get network.lan.ipaddr || true')).stdout.trim();
-  if (lanIp) map[lanIp] = '__ROUTER_LAN_IP__';
-
-  const naiveRaw = (await router.exec('cat /etc/sing-box/naive-client.json 2>/dev/null || true')).stdout;
-  const domainMatch = naiveRaw.match(/"server_name"\s*:\s*"([^"]+)"/);
-  if (domainMatch) map[domainMatch[1]] = '__DOMAIN__';
-
-  return map;
+  // Gather device-identifying values from live output (never hardcoded), then
+  // let buildValueMap turn them into stable redaction tokens.
+  const out = (s) => s.stdout.trim();
+  return buildValueMap({
+    vpsIp: out(await vps.exec('curl -s -4 ifconfig.me 2>/dev/null || true')) || process.env.VPS_HOST,
+    wanIp: out(await router.exec('uci -q get network.wan.ipaddr || true')),
+    lanIp: out(await router.exec('uci -q get network.lan.ipaddr || true')),
+    naiveJson: (await router.exec('cat /etc/sing-box/naive-client.json 2>/dev/null || true')).stdout,
+    defaultRoute: out(await router.exec('ip route show default 2>/dev/null || true')),
+    wanDns: out(await router.exec('uci -q get network.wan.dns 2>/dev/null || true')),
+  });
 }
 
 async function capture(session, captures, target, valueMap) {

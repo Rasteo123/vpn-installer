@@ -35,7 +35,7 @@ test('awgOverride reproduces the reference override', () => {
 
 test('naiveServerJson reproduces the reference naive.json', () => {
   const out = t.naiveServerJson({
-    username: 'user_b3b9f7aff0d2dfc7',
+    username: '__NAIVE_USER__',
     password: '__REDACTED__',
     domain: '__DOMAIN__',
   });
