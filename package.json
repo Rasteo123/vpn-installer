@@ -1,6 +1,6 @@
 {
   "name": "vpn-installer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "VPN stack installer for Ubuntu VPS + OpenWrt router",
   "author": "VPN Installer",
   "private": true,
