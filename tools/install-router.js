@@ -6,12 +6,8 @@ const fs = require('fs');
 const SSHSession = require('../src/main/ssh/SSHSession');
 const { createInstallContext } = require('../src/main/context');
 const { Orchestrator } = require('../src/main/orchestrator');
-const { routerBackup, restoreRouter } = require('../src/main/steps/router-backup');
-const { routerAwg } = require('../src/main/steps/router-awg');
-const { routerNaive } = require('../src/main/steps/router-naive');
-const { routerPbr } = require('../src/main/steps/router-pbr');
-const { routerFailover } = require('../src/main/steps/router-failover');
-const { routerVerify } = require('../src/main/steps/router-verify');
+const { restoreRouter } = require('../src/main/steps/router-backup');
+const { routerStepsFor } = require('../src/main/steps/select-steps');
 const { runRouterSteps } = require('../src/main/steps/router-run');
 
 function required(n) { const v = process.env[n]; if (!v) throw new Error(`Missing env ${n}`); return v; }
@@ -32,7 +28,9 @@ async function main() {
   await router.connect(ctx.inputs.router);
   ctx.sessions.router = router;
 
-  const steps = [routerBackup, routerAwg, routerNaive, routerPbr, routerFailover, routerVerify];
+  // router.naive is only planned when the server results include naive creds.
+  const steps = routerStepsFor(ctx);
+  if (!ctx.results.naive) console.log('No naive results — router.naive will be skipped.');
   const orch = new Orchestrator((e) => {
     if (e.type === 'step-start') console.log(`▶ ${e.stepId}`);
     if (e.type === 'step-done') console.log(`✔ ${e.stepId}`);

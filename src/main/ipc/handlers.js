@@ -5,15 +5,10 @@ const os = require('os');
 const SSHSession = require('../ssh/SSHSession');
 const { createInstallContext } = require('../context');
 const { Orchestrator } = require('../orchestrator');
-const { serverAwg } = require('../steps/server-awg');
-const { serverNaive } = require('../steps/server-naive');
-const { routerBackup, restoreRouter } = require('../steps/router-backup');
-const { routerAwg } = require('../steps/router-awg');
-const { routerNaive } = require('../steps/router-naive');
-const { routerPbr } = require('../steps/router-pbr');
-const { routerFailover } = require('../steps/router-failover');
-const { routerVerify } = require('../steps/router-verify');
+const { restoreRouter } = require('../steps/router-backup');
 const { runRouterSteps } = require('../steps/router-run');
+const { serverStepsFor, routerStepsFor } = require('../steps/select-steps');
+const { detectDeployment } = require('../steps/server-adopt');
 
 const MANUAL_RESTORE_HINT =
   'Manual restore: uci import network < /root/vpn-installer-backup-latest.network && uci commit network && /etc/init.d/network restart (same for firewall, pbr).';
@@ -87,8 +82,15 @@ function registerHandlers() {
     ctx.sessions.vps = vps;
     current = ctx;
 
-    const steps = [serverAwg];
-    if (ctx.inputs.protocols.naive) steps.push(serverNaive);
+    // A stack already deployed by this tool is adopted (new client added),
+    // never reinstalled over someone's working setup.
+    let detected;
+    try { detected = await detectDeployment(vps); }
+    catch (e) { vps.disconnect(); return { ok: false, error: `Deployment detection failed: ${e.message}` }; }
+    if (detected.awg || detected.naive) {
+      ctx.log('Existing installer deployment found — adding a new client to it instead of reinstalling.');
+    }
+    const steps = serverStepsFor(ctx, detected);
     const orch = new Orchestrator((e) => event.sender.send('install-event', e));
     // preflightAll: catch a misconfigured naive domain (DNS) before the long AWG install.
     const res = await orch.run(steps, ctx, { preflightAll: true, rollbackOnFailure: false });
@@ -109,7 +111,8 @@ function registerHandlers() {
     catch (e) { return { ok: false, error: `Router connect failed: ${e.message}` }; }
     ctx.sessions.router = router;
 
-    const steps = [routerBackup, routerAwg, routerNaive, routerPbr, routerFailover, routerVerify];
+    // router.naive is only planned when the server phase produced naive creds.
+    const steps = routerStepsFor(ctx);
     const orch = new Orchestrator((e) => event.sender.send('install-event', e));
     const out = await runRouterSteps(orch, steps, ctx, { restoreRouter });
     if (out.ok === false) {

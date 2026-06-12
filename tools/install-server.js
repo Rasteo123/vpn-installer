@@ -5,8 +5,8 @@ const fs = require('fs');
 const SSHSession = require('../src/main/ssh/SSHSession');
 const { createInstallContext } = require('../src/main/context');
 const { Orchestrator } = require('../src/main/orchestrator');
-const { serverAwg } = require('../src/main/steps/server-awg');
-const { serverNaive } = require('../src/main/steps/server-naive');
+const { serverStepsFor } = require('../src/main/steps/select-steps');
+const { detectDeployment } = require('../src/main/steps/server-adopt');
 
 function required(name) {
   const v = process.env[name];
@@ -27,17 +27,21 @@ async function main() {
   ctx.log = (m) => console.log('   ' + m);
   ctx.inputs.certStaging = !!process.env.NAIVE_STAGING;
 
-  let steps = [serverAwg];
-  if (ctx.inputs.protocols.naive) steps.push(serverNaive);
-  if (process.env.STEPS) {
-    const want = process.env.STEPS.split(',');
-    steps = steps.filter((s) => want.includes(s.id.replace('server.', '')));
-  }
-
   const vps = new SSHSession();
   console.log(`Connecting to VPS ${ctx.inputs.vps.host}...`);
   await vps.connect(ctx.inputs.vps);
   ctx.sessions.vps = vps;
+
+  // Adopt a stack already deployed by this tool instead of reinstalling it.
+  const detected = await detectDeployment(vps);
+  if (detected.awg || detected.naive) {
+    console.log(`Existing deployment detected (awg: ${detected.awg}, naive: ${detected.naive}) — adding a new client to it.`);
+  }
+  let steps = serverStepsFor(ctx, detected);
+  if (process.env.STEPS) {
+    const want = process.env.STEPS.split(',');
+    steps = steps.filter((s) => want.includes(s.id.replace('server.', '')));
+  }
 
   const orch = new Orchestrator((e) => {
     if (e.type === 'step-start') console.log(`▶ ${e.stepId}`);
