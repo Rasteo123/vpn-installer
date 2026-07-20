@@ -52,15 +52,22 @@ test('singBoxNaiveService reproduces the reference unit', () => {
   );
 });
 
-test('nginxServerConf builds an ACME + camouflage site for the domain', () => {
+test('nginxServerConf leaves TCP/443 to Naive and serves ACME on port 80', () => {
   const out = t.nginxServerConf({ domain: 'ex.mywire.org' });
   assert.match(out, /listen\s+80;/);
   assert.match(out, /location \/\.well-known\/acme-challenge\//);
-  assert.match(out, /return 301 https:\/\/\$host\$request_uri;/);
-  assert.match(out, /listen\s+443 ssl;/);
+  assert.match(out, /return 302 https:\/\/www\.microsoft\.com\$request_uri;/);
+  assert.doesNotMatch(out, /listen\s+443/);
   assert.match(out, /server_name ex\.mywire\.org;/);
-  assert.match(out, /ssl_certificate \/etc\/letsencrypt\/live\/ex\.mywire\.org\/fullchain\.pem;/);
-  assert.match(out, /proxy_pass https:\/\/www\.microsoft\.com;/);
+  assert.doesNotMatch(out, /ssl_certificate/);
+  assert.doesNotMatch(out, /proxy_pass/);
   assert.doesNotMatch(out, /127\.0\.0\.1:1080/);
   assert.doesNotMatch(out, /ssl_preread/);
+});
+
+nodeTest('Naive and AWG can share port 443 because Naive is pinned to TCP', () => {
+  const out = t.naiveServerJson({ username: 'u', password: 'p', domain: 'ex.org' });
+  assert.match(out, /"listen_port": 443/);
+  assert.match(out, /"network": "tcp"/);
+  assert.doesNotMatch(out, /2053/);
 });

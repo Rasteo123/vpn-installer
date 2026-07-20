@@ -31,3 +31,12 @@ test('static failover assets match the captured reference', () => {
   assert.strictEqual(normalize(r.vpnFailoverInitd()), normalize(readReference('router/etc/init.d/vpn-failover')));
   assert.strictEqual(normalize(r.singBoxNaiveInitd()), normalize(readReference('router/etc/init.d/sing-box-naive')));
 });
+
+nodeTest('failover removes VPN routes and records WAN when both tunnels fail', () => {
+  const script = r.vpnFailoverScript();
+  assert.match(script, /wan\)\s+[\s\S]*ip route del "\$SPLIT_ROUTE_A"[\s\S]*ip route del "\$SPLIT_ROUTE_B"/);
+  assert.match(script, /echo "wan" > "\$STATE_FILE"/);
+  assert.match(script, /else\s+apply_route wan\s+fi/);
+  assert.match(script, /else\s+want=wan\s+fi/);
+  assert.doesNotMatch(script, /holding state/);
+});

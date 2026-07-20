@@ -31,8 +31,8 @@ const routerFailover = makeStep({
       throw new Error('router.failover: daemon not running');
     }
     const state = (await s.exec('cat /var/run/vpn-failover.state 2>/dev/null')).stdout.trim();
-    if (!/^(awg|naive)$/.test(state)) {
-      throw new Error(`router.failover: no active interface chosen (state='${state}')`);
+    if (!/^(awg|naive|wan)$/.test(state)) {
+      throw new Error(`router.failover: no valid route state chosen (state='${state}')`);
     }
   },
 

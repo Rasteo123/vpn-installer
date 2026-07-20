@@ -143,7 +143,7 @@ const adoptServerNaive = makeStep({
       domain,
       username: user.username,
       password: user.password,
-      port: inbound.listen_port || 2053,
+      port: inbound.listen_port || 443,
       adopted: true,
     };
     log('Existing NaiveProxy adopted (credentials reused, server untouched).');
@@ -155,7 +155,7 @@ const adoptServerNaive = makeStep({
     if ((await s.exec('systemctl is-active sing-box-naive')).stdout.trim() !== 'active') {
       throw new Error('server.naive adopt: sing-box-naive is not active on the existing server');
     }
-    const port = (ctx.results.naive && ctx.results.naive.port) || 2053;
+    const port = (ctx.results.naive && ctx.results.naive.port) || 443;
     const ports = (await s.exec('ss -tulpn')).stdout;
     if (!new RegExp(`:${port}\\b`).test(ports)) {
       throw new Error(`server.naive adopt: nothing listening on ${port}`);

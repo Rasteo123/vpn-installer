@@ -7,7 +7,7 @@ async function ufwActive(session) {
   return /Status:\s*active/i.test(r.stdout);
 }
 
-// Open the given ports (e.g. '443/udp', '2053/tcp') only if ufw is active.
+// Open the given ports (e.g. '443/udp', '443/tcp') only if ufw is active.
 // Returns the list actually added so a rollback can undo exactly those.
 async function openUfwPorts(session, ports) {
   if (!(await ufwActive(session))) return [];

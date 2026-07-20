@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Step 6: complete ──
   function populateSummary() {
     const r = state.results;
-    $('summaryServer').innerHTML = '<li>AmneziaWG (UDP 443)</li>' + (r.naive ? '<li>NaiveProxy (TCP 2053)</li>' : '');
+    $('summaryServer').innerHTML = '<li>AmneziaWG (UDP 443)</li>' + (r.naive ? '<li>NaiveProxy (TCP 443)</li>' : '');
     $('summaryRouter').innerHTML = '<li>AWG client (awg0)</li>' + (r.naive ? '<li>Naive client (tun-naive)</li>' : '') + '<li>Failover awg↔naive</li>';
     if (r.awg) {
       $('credAWGContent').textContent =

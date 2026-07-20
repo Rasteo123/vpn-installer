@@ -149,7 +149,7 @@ test('adopt naive: reads creds/domain/port from the existing server config, read
   await adoptServerNaive.execute(ctx);
 
   assert.deepStrictEqual(ctx.results.naive, {
-    domain: 'ex.org', username: 'u1', password: 'p1', port: 2053, adopted: true,
+    domain: 'ex.org', username: 'u1', password: 'p1', port: 443, adopted: true,
   });
   // read-only: nothing written, nothing restarted
   assert.strictEqual(s.written[NAIVE_JSON].includes('"u1"'), true);
@@ -159,15 +159,15 @@ test('adopt naive: reads creds/domain/port from the existing server config, read
 test('adopt naive: verify demands a live service on the advertised port', async () => {
   const ok = new FakeSSHSession({
     'systemctl is-active sing-box-naive': { stdout: 'active\n' },
-    'ss -tulpn': { stdout: 'tcp LISTEN 0.0.0.0:2053\n' },
+    'ss -tulpn': { stdout: 'tcp LISTEN 0.0.0.0:443\n' },
   });
   const ctxOk = makeCtx(ok);
-  ctxOk.results.naive = { port: 2053 };
+  ctxOk.results.naive = { port: 443 };
   await adoptServerNaive.verify(ctxOk);
 
   const dead = new FakeSSHSession({ 'systemctl is-active sing-box-naive': { stdout: 'inactive\n', code: 3 } });
   const ctxDead = makeCtx(dead);
-  ctxDead.results.naive = { port: 2053 };
+  ctxDead.results.naive = { port: 443 };
   await assert.rejects(() => adoptServerNaive.verify(ctxDead), /sing-box-naive/);
 });
 

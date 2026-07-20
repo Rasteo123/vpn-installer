@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { FakeSSHSession } = require('../ssh/fake-session');
 const { createInstallContext } = require('../../src/main/context');
-const { serverNaive } = require('../../src/main/steps/server-naive');
+const { serverNaive, versionAtLeast } = require('../../src/main/steps/server-naive');
 
 const NAIVE_JSON = '/etc/sing-box/naive.json';
 const NGINX_CONF = '/etc/nginx/nginx.conf';
@@ -20,11 +20,18 @@ function ctxWith(responses) {
 
 const OK = {
   'command -v sing-box': { code: 0, stdout: '/usr/bin/sing-box' },
+  'sing-box version': { stdout: 'sing-box version 1.13.12\n' },
   'test -f /etc/letsencrypt': { stdout: 'ok\n' },
   'sing-box check': { code: 0 },
   'nginx -t': { code: 0 },
   'ufw status': { stdout: 'Status: inactive\n' },
 };
+
+test('server.naive requires sing-box with the Naive 1.13.12 fixes', () => {
+  assert.strictEqual(versionAtLeast('1.13.12', '1.13.12'), true);
+  assert.strictEqual(versionAtLeast('1.14.0', '1.13.12'), true);
+  assert.strictEqual(versionAtLeast('1.13.11', '1.13.12'), false);
+});
 
 test('server.naive writes naive.json with 0600 permissions', async () => {
   const ctx = ctxWith(OK);
@@ -32,17 +39,28 @@ test('server.naive writes naive.json with 0600 permissions', async () => {
   assert.strictEqual(ctx.sessions.vps.modes[NAIVE_JSON], 0o600);
 });
 
-test('server.naive opens 80,443,2053/tcp when ufw is active; rollback closes them', async () => {
+test('server.naive opens only 80 and 443/tcp when ufw is active; rollback closes them', async () => {
   const ctx = ctxWith({ ...OK, 'ufw status': { stdout: 'Status: active\n' } });
   await serverNaive.execute(ctx);
   const s = ctx.sessions.vps;
-  for (const p of ['80/tcp', '443/tcp', '2053/tcp']) {
+  for (const p of ['80/tcp', '443/tcp']) {
     assert.ok(s.execed.some((c) => c.includes(`ufw allow ${p}`)), `should open ${p}`);
   }
   await serverNaive.rollback(ctx);
-  for (const p of ['80/tcp', '443/tcp', '2053/tcp']) {
+  assert.ok(!s.execed.some((c) => c.includes('2053/tcp')), 'must not expose legacy port 2053');
+  for (const p of ['80/tcp', '443/tcp']) {
     assert.ok(s.execed.some((c) => c.includes(`ufw delete allow ${p}`)), `should close ${p}`);
   }
+});
+
+test('server.naive advertises TCP/443 to the router', async () => {
+  const ctx = ctxWith(OK);
+  await serverNaive.execute(ctx);
+  assert.strictEqual(ctx.results.naive.port, 443);
+  assert.match(ctx.sessions.vps.written[NAIVE_JSON], /"listen_port": 443/);
+  assert.match(ctx.sessions.vps.written[NAIVE_JSON], /"network": "tcp"/);
+  assert.ok(ctx.sessions.vps.execed.some((c) => c.includes('certbot certonly --webroot')),
+    'certificate renewal must remain compatible with nginx on port 80');
 });
 
 test('server.naive backs up an existing nginx.conf before overwriting it', async () => {

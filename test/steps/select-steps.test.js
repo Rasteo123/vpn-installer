@@ -34,7 +34,7 @@ test('serverStepsFor: mixed case — adopt awg, fresh-install naive when domain 
 
 test('routerStepsFor: includes router.naive only when server naive results exist', () => {
   const withNaive = ctxWith({ naiveDomain: 'ex.org' });
-  withNaive.results.naive = { domain: 'ex.org', username: 'u', password: 'p', port: 2053 };
+  withNaive.results.naive = { domain: 'ex.org', username: 'u', password: 'p', port: 443 };
   assert.deepStrictEqual(
     routerStepsFor(withNaive).map((s) => s.id),
     ['router.backup', 'router.awg', 'router.naive', 'router.pbr', 'router.failover', 'router.verify']

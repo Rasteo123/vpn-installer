@@ -3,6 +3,50 @@ const { naiveClientJson, singBoxNaiveInitd } = require('../config/router-templat
 
 const CONF = '/etc/sing-box/naive-client.json';
 const INITD = '/etc/init.d/sing-box-naive';
+const MIN_SING_BOX_VERSION = '1.13.12';
+
+function versionAtLeast(actual, minimum) {
+  const a = String(actual).split('.').map(Number);
+  const b = String(minimum).split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] || 0) - (b[i] || 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return true;
+}
+
+async function singBoxVersion(s) {
+  const out = (await s.exec('/usr/bin/sing-box version 2>/dev/null | head -1')).stdout;
+  const match = out.match(/sing-box version\s+(\d+\.\d+\.\d+)/);
+  return match ? match[1] : null;
+}
+
+async function ensureSingBox(s, log) {
+  let version = await singBoxVersion(s);
+  const tunInstalled = (await s.exec("opkg list-installed 2>/dev/null | grep -q '^kmod-tun ' && echo yes || echo no")).stdout.trim() === 'yes';
+  if (versionAtLeast(version || '0.0.0', MIN_SING_BOX_VERSION) && tunInstalled) return;
+
+  log(`Installing sing-box >= ${MIN_SING_BOX_VERSION} and kmod-tun...`);
+  await s.exec('opkg update');
+  await s.exec('opkg install sing-box kmod-tun');
+  version = await singBoxVersion(s);
+  if (versionAtLeast(version || '0.0.0', MIN_SING_BOX_VERSION)) return;
+
+  // Some stable OpenWrt feeds lag behind sing-box releases. Fetch the official
+  // package matching the router's highest-priority opkg architecture.
+  const officialInstall = `set -eu
+arch=$(opkg print-architecture | awk '$2 != "all" && $2 != "noarch" { print $2, $3 }' | sort -nk2 | tail -n1 | awk '{ print $1 }')
+[ -n "$arch" ]
+pkg="/tmp/sing-box_${MIN_SING_BOX_VERSION}_${'$'}{arch}.ipk"
+curl -fL --retry 2 -o "$pkg" "https://github.com/SagerNet/sing-box/releases/download/v${MIN_SING_BOX_VERSION}/sing-box_${MIN_SING_BOX_VERSION}_openwrt_${'$'}{arch}.ipk"
+opkg install "$pkg"
+rm -f "$pkg"`;
+  const install = await s.exec(officialInstall);
+  version = await singBoxVersion(s);
+  if (install.code !== 0 || !versionAtLeast(version || '0.0.0', MIN_SING_BOX_VERSION)) {
+    throw new Error(`router.naive: sing-box ${version || 'unknown'} is older than required ${MIN_SING_BOX_VERSION}: ${(install.stderr || '').slice(-200)}`);
+  }
+}
 
 const SETUP_TUN_NAIVE = [
   'uci -q delete network.tun_naive',
@@ -58,14 +102,7 @@ const routerNaive = makeStep({
     const log = ctx.log || (() => {});
     const n = ctx.results.naive;
 
-    if ((await s.exec('command -v sing-box')).code !== 0) {
-      log('Installing sing-box...');
-      await s.exec('opkg update');
-      const r = await s.exec('opkg install sing-box kmod-tun');
-      if ((await s.exec('command -v sing-box')).code !== 0) {
-        throw new Error(`router.naive: sing-box install failed: ${(r.stderr || '').slice(-200)}`);
-      }
-    }
+    await ensureSingBox(s, log);
 
     log('Writing naive client config...');
     await s.exec('mkdir -p /etc/sing-box');
@@ -111,4 +148,4 @@ const routerNaive = makeStep({
   },
 });
 
-module.exports = { routerNaive };
+module.exports = { routerNaive, versionAtLeast, ensureSingBox };

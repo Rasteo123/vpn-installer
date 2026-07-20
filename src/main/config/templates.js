@@ -61,8 +61,11 @@ ExecStartPre=modprobe amneziawg
 `;
 }
 
-// NaiveProxy (sing-box) server inbound on :2053 with the domain's LE cert.
-function naiveServerJson({ username, password, domain, listenPort = 2053 }) {
+// NaiveProxy (sing-box) server inbound on TCP/443 with the domain's LE cert.
+// AWG uses UDP/443, so both services can share the familiar HTTPS port without
+// competing for the same socket. Pinning the inbound to TCP keeps Naive on
+// HTTP/2 and avoids the easier-to-classify QUIC/non-standard-port fallback.
+function naiveServerJson({ username, password, domain, listenPort = 443 }) {
   return `{
   "log": { "level": "warn", "timestamp": true },
   "inbounds": [
@@ -71,6 +74,7 @@ function naiveServerJson({ username, password, domain, listenPort = 2053 }) {
       "tag": "naive-in",
       "listen": "0.0.0.0",
       "listen_port": ${listenPort},
+      "network": "tcp",
       "users": [
         { "username": "${username}", "password": "${password}" }
       ],
@@ -92,7 +96,7 @@ function naiveServerJson({ username, password, domain, listenPort = 2053 }) {
 // systemd unit for the sing-box naive server.
 function singBoxNaiveService() {
   return `[Unit]
-Description=sing-box (naive fallback) on :2053
+Description=sing-box (naive fallback) on TCP/443
 After=network-online.target nss-lookup.target
 Wants=network-online.target
 
@@ -111,8 +115,8 @@ WantedBy=multi-user.target
 `;
 }
 
-// nginx: ACME (:80) + camouflage HTTPS (:443) for the domain.
-// Simplified vs the VLESS-era reference (no SNI stream multiplexer).
+// nginx only owns TCP/80 for ACME renewal. TCP/443 belongs to NaiveProxy;
+// ordinary HTTP requests are redirected to a public HTTPS site.
 function nginxServerConf({ domain, camouflageHost = 'www.microsoft.com' }) {
   return `user www-data;
 worker_processes auto;
@@ -131,24 +135,7 @@ http {
             root /var/www/html;
         }
         location / {
-            return 301 https://$host$request_uri;
-        }
-    }
-
-    server {
-        listen 443 ssl;
-        server_name ${domain};
-
-        ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
-
-        # Camouflage: look like a real site
-        location / {
-            proxy_pass https://${camouflageHost};
-            proxy_set_header Host ${camouflageHost};
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_ssl_server_name on;
+            return 302 https://${camouflageHost}$request_uri;
         }
     }
 }

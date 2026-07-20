@@ -10,7 +10,7 @@ function readAsset(name) {
 // Reproduces reference router naive-client.json. Device values are inputs.
 function naiveClientJson({
   vpsIp,
-  naivePort = 2053,
+  naivePort = 443,
   username,
   password,
   domain,

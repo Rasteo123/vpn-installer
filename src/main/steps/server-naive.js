@@ -8,10 +8,28 @@ const NAIVE_UNIT = '/etc/systemd/system/sing-box-naive.service';
 const NGINX_CONF = '/etc/nginx/nginx.conf';
 const NGINX_BAK = '/etc/nginx/nginx.conf.vpn-installer.bak';
 const APT_TIMEOUT = { timeoutMs: 900000 };
-const UFW_PORTS = ['80/tcp', '443/tcp', '2053/tcp'];
+const MIN_SING_BOX_VERSION = '1.13.12';
+const NAIVE_PORT = 443;
+const UFW_PORTS = ['80/tcp', '443/tcp'];
 
-// Installs NaiveProxy (sing-box) on :2053 with a Let's Encrypt cert, plus an
-// nginx ACME(:80) + camouflage(:443) site for the domain.
+function versionAtLeast(actual, minimum) {
+  const a = String(actual).split('.').map(Number);
+  const b = String(minimum).split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] || 0) - (b[i] || 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return true;
+}
+
+async function singBoxVersion(s) {
+  const out = (await s.exec('sing-box version 2>/dev/null | head -1')).stdout;
+  const match = out.match(/sing-box version\s+(\d+\.\d+\.\d+)/);
+  return match ? match[1] : null;
+}
+
+// Installs NaiveProxy (sing-box) on TCP/443 with a Let's Encrypt cert. nginx
+// remains on TCP/80 for ACME renewal; AWG can independently use UDP/443.
 const serverNaive = makeStep({
   id: 'server.naive',
   title: 'NaiveProxy + nginx (server)',
@@ -41,41 +59,49 @@ const serverNaive = makeStep({
     if ((await s.exec('command -v sing-box')).code !== 0) {
       throw new Error(`server.naive: sing-box install failed: ${sb.stderr.slice(-300)}`);
     }
-
-    log('Obtaining Let\'s Encrypt certificate...');
-    await s.exec('systemctl stop nginx 2>/dev/null; true');
-    const staging = ctx.inputs.certStaging ? ' --test-cert' : '';
-    const cert = await s.exec(`certbot certonly --standalone -d ${domain} --non-interactive --agree-tos -m admin@${domain} --no-eff-email${staging}`);
-    if ((await s.exec(`test -f /etc/letsencrypt/live/${domain}/fullchain.pem && echo ok`)).stdout.trim() !== 'ok') {
-      throw new Error(`server.naive: certificate not obtained:\n${cert.stdout.slice(-400)}\n${cert.stderr.slice(-400)}`);
+    const installedVersion = await singBoxVersion(s);
+    if (!installedVersion || !versionAtLeast(installedVersion, MIN_SING_BOX_VERSION)) {
+      throw new Error(`server.naive: sing-box ${installedVersion || 'unknown'} is older than required ${MIN_SING_BOX_VERSION}`);
     }
 
-    log('Writing configs...');
-    const creds = generateNaiveCreds();
+    log('Preparing the ACME web root...');
     await s.exec('mkdir -p /etc/sing-box /var/www/html');
-    // naive.json holds the proxy password — keep it private.
-    await s.writeFile(NAIVE_JSON, naiveServerJson({ username: creds.username, password: creds.password, domain }), { mode: 0o600 });
-    await s.writeFile(NAIVE_UNIT, singBoxNaiveService());
     await s.exec('rm -f /etc/nginx/sites-enabled/default');
     // Preserve the distro's nginx.conf so a failed run can restore it instead
     // of leaving the box with our config (or none). -n: don't clobber a prior backup.
     await s.exec(`[ -f ${NGINX_CONF} ] && cp -n ${NGINX_CONF} ${NGINX_BAK} || true`);
     await s.writeFile(NGINX_CONF, nginxServerConf({ domain }));
-
-    const chk = await s.exec(`sing-box check -c ${NAIVE_JSON}`);
-    if (chk.code !== 0) throw new Error(`server.naive: sing-box config invalid: ${chk.stderr.slice(-300)}`);
     const ngt = await s.exec('nginx -t 2>&1');
     if (ngt.code !== 0) throw new Error(`server.naive: nginx config invalid: ${ngt.stdout.slice(-300)}`);
+    await openUfwPorts(s, UFW_PORTS);
+    await s.exec('systemctl enable nginx && systemctl restart nginx');
+
+    // Webroot mode keeps renewal compatible with nginx remaining on TCP/80.
+    log('Obtaining Let\'s Encrypt certificate...');
+    const staging = ctx.inputs.certStaging ? ' --test-cert' : '';
+    const cert = await s.exec(`certbot certonly --webroot -w /var/www/html -d ${domain} --non-interactive --agree-tos -m admin@${domain} --no-eff-email${staging}`);
+    if ((await s.exec(`test -f /etc/letsencrypt/live/${domain}/fullchain.pem && echo ok`)).stdout.trim() !== 'ok') {
+      throw new Error(`server.naive: certificate not obtained:\n${cert.stdout.slice(-400)}\n${cert.stderr.slice(-400)}`);
+    }
+
+    log('Writing NaiveProxy config...');
+    const creds = generateNaiveCreds();
+    // naive.json holds the proxy password — keep it private.
+    await s.writeFile(NAIVE_JSON, naiveServerJson({
+      username: creds.username,
+      password: creds.password,
+      domain,
+      listenPort: NAIVE_PORT,
+    }), { mode: 0o600 });
+    await s.writeFile(NAIVE_UNIT, singBoxNaiveService());
+    const chk = await s.exec(`sing-box check -c ${NAIVE_JSON}`);
+    if (chk.code !== 0) throw new Error(`server.naive: sing-box config invalid: ${chk.stderr.slice(-300)}`);
 
     log('Starting services...');
     await s.exec('systemctl daemon-reload');
     await s.exec('systemctl enable sing-box-naive && systemctl restart sing-box-naive');
-    await s.exec('systemctl enable nginx && systemctl restart nginx');
 
-    // Open the HTTP/HTTPS/naive ports if a host firewall is active.
-    await openUfwPorts(s, UFW_PORTS);
-
-    ctx.results.naive = { domain, username: creds.username, password: creds.password, port: 2053 };
+    ctx.results.naive = { domain, username: creds.username, password: creds.password, port: NAIVE_PORT };
     log('NaiveProxy + nginx installed.');
   },
 
@@ -87,9 +113,11 @@ const serverNaive = makeStep({
         throw new Error(`server.naive: ${svc} not active:\n${st}`);
       }
     }
-    const ports = (await s.exec('ss -tulpn')).stdout;
-    if (!/:2053\b/.test(ports)) throw new Error('server.naive: nothing listening on 2053');
-    if (!/:443\b/.test(ports)) throw new Error('server.naive: nginx not listening on 443');
+    const ports = (await s.exec('ss -tlpn')).stdout;
+    if (!new RegExp(`:${NAIVE_PORT}\\b.*sing-box`).test(ports)) {
+      throw new Error(`server.naive: sing-box is not listening on TCP/${NAIVE_PORT}`);
+    }
+    if (!/:80\b.*nginx/.test(ports)) throw new Error('server.naive: nginx not listening on TCP/80');
   },
 
   async rollback(ctx) {
@@ -103,4 +131,4 @@ const serverNaive = makeStep({
   },
 });
 
-module.exports = { serverNaive };
+module.exports = { serverNaive, versionAtLeast };

@@ -14,10 +14,10 @@ test('ufwActive is true only when status reports active', async () => {
 
 test('openUfwPorts opens ports only when ufw is active and reports what it added', async () => {
   const s = new FakeSSHSession({ 'ufw status': { stdout: 'Status: active\n' } });
-  const added = await openUfwPorts(s, ['443/udp', '2053/tcp']);
-  assert.deepStrictEqual(added, ['443/udp', '2053/tcp']);
+  const added = await openUfwPorts(s, ['443/udp', '443/tcp']);
+  assert.deepStrictEqual(added, ['443/udp', '443/tcp']);
   assert.ok(s.execed.some((c) => c.includes('ufw allow 443/udp')));
-  assert.ok(s.execed.some((c) => c.includes('ufw allow 2053/tcp')));
+  assert.ok(s.execed.some((c) => c.includes('ufw allow 443/tcp')));
 });
 
 test('openUfwPorts is a no-op when ufw is inactive', async () => {

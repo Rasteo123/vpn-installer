@@ -33,6 +33,15 @@ apply_route() {
             iface="$NAIVE_IFACE"
             state="naive"
             ;;
+        wan)
+            # Fail open: stale split-default routes would black-hole all
+            # internet traffic when both tunnels are unavailable.
+            ip route del "$SPLIT_ROUTE_A" >/dev/null 2>&1 || true
+            ip route del "$SPLIT_ROUTE_B" >/dev/null 2>&1 || true
+            echo "wan" > "$STATE_FILE"
+            log "both VPNs unavailable; removed split routes and fell back to WAN"
+            return 0
+            ;;
         *)
             log "refusing unknown target=$target"
             return 1
@@ -56,15 +65,12 @@ apply_route() {
 }
 
 choose_once() {
-    current=""
-    [ -f "$STATE_FILE" ] && current=$(cat "$STATE_FILE")
-
     if probe "$AWG_IFACE"; then
         apply_route awg
     elif probe "$NAIVE_IFACE"; then
         apply_route naive
     else
-        log "both interfaces failed one-shot probe, holding state=$current"
+        apply_route wan
     fi
 }
 
@@ -73,24 +79,19 @@ if [ "${1:-}" = "once" ]; then
     exit 0
 fi
 
-awg_fails=0; awg_oks=0; awg_alive=1
-naive_fails=0; naive_oks=0; naive_alive=1
+awg_fails=0; awg_oks=0
+naive_fails=0; naive_oks=0
 active=""
 
-if [ -f "$STATE_FILE" ]; then
-    prev=$(cat "$STATE_FILE")
-    if apply_route "$prev"; then
-        active="$prev"
-        log "restored on startup: active=$active"
-    else
-        active=""
-        choose_once
-        [ -f "$STATE_FILE" ] && active=$(cat "$STATE_FILE")
-    fi
-else
-    choose_once
-    [ -f "$STATE_FILE" ] && active=$(cat "$STATE_FILE")
-fi
+# Never restore a stale route just because it was active before a reboot or
+# provider outage. Probe first, then derive hysteresis state from that result.
+choose_once
+[ -f "$STATE_FILE" ] && active=$(cat "$STATE_FILE")
+case "$active" in
+    awg) awg_alive=1; naive_alive=0 ;;
+    naive) awg_alive=0; naive_alive=1 ;;
+    *) awg_alive=0; naive_alive=0; active="wan" ;;
+esac
 
 while :; do
     if probe "$AWG_IFACE"; then
@@ -122,8 +123,7 @@ while :; do
     elif [ "$naive_alive" = "1" ]; then
         want=naive
     else
-        want="$active"
-        log "both interfaces dead, holding state=$active"
+        want=wan
     fi
 
     if [ -n "$want" ] && [ "$want" != "$active" ]; then
