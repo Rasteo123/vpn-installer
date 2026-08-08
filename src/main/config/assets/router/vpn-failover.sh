@@ -126,7 +126,17 @@ while :; do
         want=wan
     fi
 
-    if [ -n "$want" ] && [ "$want" != "$active" ]; then
+    # Compare the actual route device with the desired one, not only our own
+    # remembered state: netifd re-installs the uci split routes via awg0 on any
+    # network reload, silently undoing a naive/wan decision.
+    desired_dev=""
+    case "$want" in
+        awg) desired_dev="$AWG_IFACE" ;;
+        naive) desired_dev="$NAIVE_IFACE" ;;
+    esac
+    cur_dev=$(ip route show "$SPLIT_ROUTE_A" 2>/dev/null | sed -n 's/.*dev \([^ ]*\).*/\1/p' | head -n1)
+
+    if [ "$want" != "$active" ] || [ "$cur_dev" != "$desired_dev" ]; then
         if apply_route "$want"; then
             active="$want"
         fi

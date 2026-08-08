@@ -1,4 +1,4 @@
-const { assertHost, assertDomain, assertPort } = require('./config/validate');
+const { assertHost, assertIpv4, assertDomain, assertPort } = require('./config/validate');
 
 // Single shared state object for an install run. Device-specific values come
 // only from `inputs`; `results` is filled by steps and returned to the UI.
@@ -11,7 +11,9 @@ function createInstallContext(input = {}) {
   return {
     inputs: {
       vps: {
-        host: vps.host === undefined ? undefined : assertHost(vps.host, 'VPS host'),
+        // Strictly IPv4: the router phase writes this into uci routes,
+        // sing-box ip_cidr rules and the egress-IP check.
+        host: vps.host === undefined ? undefined : assertIpv4(vps.host, 'VPS host'),
         port: assertPort(vps.port || 22, 'VPS port'),
         username: vps.username || 'root',
         auth: vps.auth || (vps.privateKey ? 'key' : 'password'),

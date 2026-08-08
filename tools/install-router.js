@@ -41,7 +41,8 @@ async function main() {
   if (out.ok === false) {
     console.log(`\n⚠ Failure: ${out.error && out.error.message}`);
     if (out.restored) console.log('Router restored from backup.');
-    else console.log('RESTORE FAILED: ' + out.restoreError + '\nManual: uci import <pkg> < /root/vpn-installer-backup-latest.<pkg> && uci commit <pkg> (network, firewall, pbr); then /etc/init.d/network restart');
+    else if (out.restored === false) console.log('RESTORE FAILED: ' + out.restoreError + '\nManual: uci import <pkg> < /root/vpn-installer-backup-latest.<pkg> && uci commit <pkg> (network, firewall, pbr); then /etc/init.d/network restart');
+    else console.log('Router was not modified — nothing to restore.');
   }
 
   router.disconnect();

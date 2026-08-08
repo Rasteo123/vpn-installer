@@ -32,6 +32,16 @@ test('static failover assets match the captured reference', () => {
   assert.strictEqual(normalize(r.singBoxNaiveInitd()), normalize(readReference('router/etc/init.d/sing-box-naive')));
 });
 
+// netifd re-installs the uci split routes via awg0 on any network reload; the
+// daemon must compare the actual route device with the desired one each cycle,
+// not only its own remembered state — or a reload while awg is dead black-holes
+// all traffic until awg recovers.
+nodeTest('failover re-applies routes when netifd re-installs them behind its back', () => {
+  const script = r.vpnFailoverScript();
+  assert.match(script, /cur_dev=\$\(ip route show "\$SPLIT_ROUTE_A"/);
+  assert.match(script, /\[ "\$want" != "\$active" \] \|\| \[ "\$cur_dev" != "\$desired_dev" \]/);
+});
+
 nodeTest('failover removes VPN routes and records WAN when both tunnels fail', () => {
   const script = r.vpnFailoverScript();
   assert.match(script, /wan\)\s+[\s\S]*ip route del "\$SPLIT_ROUTE_A"[\s\S]*ip route del "\$SPLIT_ROUTE_B"/);

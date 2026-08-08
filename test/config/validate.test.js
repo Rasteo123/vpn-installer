@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { assertHost, assertDomain, assertPort } = require('../../src/main/config/validate');
+const { assertHost, assertIpv4, assertDomain, assertPort } = require('../../src/main/config/validate');
 
 test('assertHost accepts IPv4, hostnames and IPv6, and trims', () => {
   assert.strictEqual(assertHost(' 203.0.113.9 '), '203.0.113.9');
@@ -12,6 +12,14 @@ test('assertHost rejects shell metacharacters and junk', () => {
   for (const bad of ['1.2.3.4; rm -rf /', 'host name', "x'y", 'a$(reboot)', '', '   ', 'host`id`', 'a&&b', '-leading.dash']) {
     assert.throws(() => assertHost(bad), /host/i, `should reject: ${JSON.stringify(bad)}`);
   }
+});
+
+test('assertIpv4 accepts only a literal IPv4 address and trims', () => {
+  assert.strictEqual(assertIpv4(' 203.0.113.9 '), '203.0.113.9');
+  for (const bad of ['vpn.example.com', '2001:db8::1', '999.1.1.1', '1.2.3', '1.2.3.4;id', '1.2.3.4 5']) {
+    assert.throws(() => assertIpv4(bad, 'VPS host'), /IPv4/i, `should reject: ${JSON.stringify(bad)}`);
+  }
+  assert.throws(() => assertIpv4('', 'VPS host'), /пустое/, 'empty value gets the standard empty-value message');
 });
 
 test('assertDomain accepts a normal FQDN and lowercases it', () => {

@@ -8,13 +8,16 @@ async function ufwActive(session) {
 }
 
 // Open the given ports (e.g. '443/udp', '443/tcp') only if ufw is active.
-// Returns the list actually added so a rollback can undo exactly those.
+// Returns the list actually added so a rollback can undo exactly those; a rule
+// that already existed belongs to the box's admin and is not ours to remove.
 async function openUfwPorts(session, ports) {
   if (!(await ufwActive(session))) return [];
+  const added = [];
   for (const p of ports) {
-    await session.exec(`ufw allow ${p}`);
+    const r = await session.exec(`ufw allow ${p}`);
+    if (!/Skipping/i.test(r.stdout)) added.push(p);
   }
-  return ports;
+  return added;
 }
 
 async function closeUfwPorts(session, ports) {

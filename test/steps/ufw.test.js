@@ -20,6 +20,18 @@ test('openUfwPorts opens ports only when ufw is active and reports what it added
   assert.ok(s.execed.some((c) => c.includes('ufw allow 443/tcp')));
 });
 
+// A rule that already existed belongs to the box's admin — it must not end up
+// in the "added" list, or a later cleanup would delete a rule we never created.
+test('openUfwPorts does not claim ports whose rule already existed', async () => {
+  const s = new FakeSSHSession({
+    'ufw status': { stdout: 'Status: active\n' },
+    'ufw allow 80/tcp': { stdout: 'Skipping adding existing rule\nSkipping adding existing rule (v6)\n' },
+    'ufw allow 443/tcp': { stdout: 'Rule added\nRule added (v6)\n' },
+  });
+  const added = await openUfwPorts(s, ['80/tcp', '443/tcp']);
+  assert.deepStrictEqual(added, ['443/tcp']);
+});
+
 test('openUfwPorts is a no-op when ufw is inactive', async () => {
   const s = new FakeSSHSession({ 'ufw status': { stdout: 'Status: inactive\n' } });
   const added = await openUfwPorts(s, ['443/udp']);

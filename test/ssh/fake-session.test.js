@@ -19,6 +19,14 @@ test('records executed commands and written files', async () => {
   assert.strictEqual(await s.exists('/etc/x.conf'), true);
 });
 
+test('respondOnce serves one-time responses first, then falls back to the map', async () => {
+  const s = new FakeSSHSession({ 'awg show': { stdout: 'latest handshake: 1s ago' } });
+  s.respondOnce('awg show', { stdout: 'peer: X' });
+  assert.strictEqual((await s.exec('awg show awg0')).stdout, 'peer: X');
+  assert.strictEqual((await s.exec('awg show awg0')).stdout, 'latest handshake: 1s ago');
+  assert.strictEqual((await s.exec('awg show awg0')).stdout, 'latest handshake: 1s ago');
+});
+
 test('unmatched command returns empty success', async () => {
   const s = new FakeSSHSession();
   const res = await s.exec('whatever');

@@ -3,13 +3,27 @@
 class FakeSSHSession {
   constructor(responses = {}) {
     this.responses = responses;
+    this.onceResponses = {};
     this.execed = [];
     this.written = {};
     this.modes = {};
     this.connected = true;
   }
 
+  // Queue a one-time response for a command substring; consumed in FIFO order
+  // before the permanent `responses` map. Lets tests model state that changes
+  // between polls (a service coming up, a handshake appearing).
+  respondOnce(key, res) {
+    (this.onceResponses[key] = this.onceResponses[key] || []).push(res);
+    return this;
+  }
+
   _match(command) {
+    for (const key of Object.keys(this.onceResponses)) {
+      if (command.includes(key) && this.onceResponses[key].length) {
+        return { stdout: '', stderr: '', code: 0, ...this.onceResponses[key].shift() };
+      }
+    }
     for (const key of Object.keys(this.responses)) {
       if (command.includes(key)) {
         return { stdout: '', stderr: '', code: 0, ...this.responses[key] };

@@ -73,6 +73,54 @@ test('server.naive backs up an existing nginx.conf before overwriting it', async
   assert.ok(Object.prototype.hasOwnProperty.call(s.written, NGINX_CONF));
 });
 
+// The server phase runs without orchestrator rollback, so execute must clean
+// up after itself: a failed run may not leave the box with our nginx.conf.
+test('server.naive: a certbot failure restores nginx and rethrows', async () => {
+  const ctx = ctxWith({ ...OK, 'test -f /etc/letsencrypt': { stdout: '' } });
+  await assert.rejects(() => serverNaive.execute(ctx), /certificate not obtained/);
+  const s = ctx.sessions.vps;
+  const restoreIdx = s.execed.findIndex((c) => c.includes(NGINX_BAK) && c.includes('mv'));
+  assert.ok(restoreIdx !== -1, 'nginx.conf must be restored from the backup');
+  const restartIdxs = s.execed
+    .map((c, i) => (/systemctl restart nginx/.test(c) ? i : -1))
+    .filter((i) => i >= 0);
+  assert.ok(restartIdxs[restartIdxs.length - 1] > restoreIdx, 'nginx must be restarted after the restore');
+});
+
+test('server.naive: failure after writing naive.json removes it so a re-run reinstalls cleanly', async () => {
+  const ctx = ctxWith({ ...OK, 'sing-box check': { code: 1, stderr: 'bad config' } });
+  await assert.rejects(() => serverNaive.execute(ctx), /config invalid/);
+  const s = ctx.sessions.vps;
+  assert.ok(
+    s.execed.some((c) => c.includes('rm -f') && c.includes(NAIVE_JSON)),
+    'naive.json must be removed, or the next run would adopt a broken install',
+  );
+});
+
+// An adopted VPS may not have had an apt run for months — install with a
+// stale package index 404s on Ubuntu version bumps.
+test('server.naive refreshes the apt package index before installing', async () => {
+  const ctx = ctxWith(OK);
+  await serverNaive.execute(ctx);
+  const s = ctx.sessions.vps;
+  const upd = s.execed.findIndex((c) => c.includes('apt-get update'));
+  const inst = s.execed.findIndex((c) => c.includes('apt-get install -y nginx certbot'));
+  assert.ok(upd !== -1, 'should run apt-get update');
+  assert.ok(upd < inst, 'update must precede the install');
+});
+
+test('server.naive rollback brings nginx back up with the restored config', async () => {
+  const ctx = ctxWith(OK);
+  await serverNaive.execute(ctx);
+  const before = ctx.sessions.vps.execed.length;
+  await serverNaive.rollback(ctx);
+  const tail = ctx.sessions.vps.execed.slice(before);
+  const restoreIdx = tail.findIndex((c) => c.includes(NGINX_BAK) && c.includes('mv'));
+  const restartIdx = tail.findIndex((c) => /systemctl restart nginx/.test(c));
+  assert.ok(restartIdx !== -1, 'rollback must restart nginx, not leave it stopped');
+  assert.ok(restartIdx > restoreIdx, 'restart must come after the config restore');
+});
+
 test('server.naive rollback restores the saved nginx.conf instead of deleting it', async () => {
   const ctx = ctxWith(OK);
   await serverNaive.execute(ctx);

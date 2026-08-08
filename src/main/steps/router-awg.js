@@ -1,4 +1,5 @@
 const { makeStep } = require('./step');
+const { waitFor } = require('./poll');
 const { uciBatch, awgNetworkUci } = require('../config/uci');
 
 const AWG_PKGS = ['amneziawg-tools', 'kmod-amneziawg', 'luci-app-amneziawg'];
@@ -81,10 +82,16 @@ const routerAwg = makeStep({
   async verify(ctx) {
     const s = ctx.sessions.router;
     await s.exec(`ping -c1 -W3 ${ctx.inputs.vps.host} >/dev/null 2>&1 || true`);
-    await new Promise((r) => setTimeout(r, 8000));
-    const show = await s.exec('awg show awg0');
-    if (!/peer:/.test(show.stdout)) throw new Error('router.awg: no peer configured on awg0');
-    if (!/latest handshake/.test(show.stdout)) throw new Error('router.awg: no handshake with the server');
+    // The first handshake lands seconds after the network restart; poll for it
+    // instead of sampling once after a fixed delay.
+    const t = ctx.timing || {};
+    let show = '';
+    await waitFor(async () => {
+      show = (await s.exec('awg show awg0')).stdout;
+      return /latest handshake/.test(show);
+    }, { timeoutMs: t.pollTimeoutMs ?? 30000, intervalMs: t.pollIntervalMs ?? 3000 });
+    if (!/peer:/.test(show)) throw new Error('router.awg: no peer configured on awg0');
+    if (!/latest handshake/.test(show)) throw new Error('router.awg: no handshake with the server');
   },
 
   async rollback(ctx) {

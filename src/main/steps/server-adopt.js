@@ -1,5 +1,6 @@
 const { makeStep } = require('./step');
 const { parseAwgConf, nextFreePeerIp } = require('../config/awg-conf');
+const { openUfwPorts } = require('./ufw');
 
 // Adoption: the VPS already runs a stack deployed by this installer (possibly
 // for someone else). Instead of reinstalling — which would overwrite awg0.conf
@@ -79,6 +80,10 @@ const adoptServerAwg = makeStep({
     const peerBlock = `\n[Peer]\n# vpn-installer: adopted client\nPublicKey = ${cpub}\nPresharedKey = ${psk}\nAllowedIPs = ${clientAddress}\n`;
     await s.writeFile(AWG_CONF, conf.replace(/\n*$/, '\n') + peerBlock, { mode: 0o600 });
     await applyAwgConf(s);
+    // Heal a fresh install that died between starting the service and opening
+    // ufw: re-allowing the listen port is idempotent, and rollback deliberately
+    // never closes it — the port belongs to the original install.
+    await openUfwPorts(s, [`${parsed.interface.listenPort || 443}/udp`]);
 
     ctx.results.awg = {
       serverPublicKey: serverPub,

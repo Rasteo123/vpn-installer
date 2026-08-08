@@ -16,10 +16,12 @@ const MANUAL_RESTORE_HINT =
 // One context carried across the server and router phases of a session.
 let current = null;
 
-const { assertHost, assertPort } = require('../config/validate');
+const { assertHost, assertIpv4, assertPort } = require('../config/validate');
 
 function vpsConnectConfig(vps) {
-  const cfg = { host: assertHost(vps.host, 'VPS host'), port: assertPort(vps.port || 22, 'VPS port'), username: vps.username || 'root' };
+  // IPv4-only, same as createInstallContext — the "check connection" button
+  // must reject a hostname the install would refuse anyway.
+  const cfg = { host: assertIpv4(vps.host, 'VPS host'), port: assertPort(vps.port || 22, 'VPS port'), username: vps.username || 'root' };
   if (vps.auth === 'key') {
     cfg.privateKey = vps.keyPath ? fs.readFileSync(vps.keyPath, 'utf8') : vps.privateKey;
     if (vps.passphrase) cfg.passphrase = vps.passphrase;
@@ -102,7 +104,7 @@ function registerHandlers() {
     const ctx = current || createInstallContext({});
     try {
       ctx.inputs.router = { host: assertHost(config.router.host, 'Router host'), port: assertPort(config.router.port || 22, 'Router port'), username: 'root', password: config.router.password };
-      if (config.vpsHost) ctx.inputs.vps.host = assertHost(config.vpsHost, 'VPS host');
+      if (config.vpsHost) ctx.inputs.vps.host = assertIpv4(config.vpsHost, 'VPS host');
     } catch (e) { return { ok: false, error: e.message }; }
     ctx.log = (m) => event.sender.send('install-log', { phase: 'router', message: m });
 
@@ -117,7 +119,8 @@ function registerHandlers() {
     const out = await runRouterSteps(orch, steps, ctx, { restoreRouter });
     if (out.ok === false) {
       if (out.restored) ctx.log('Router restored from backup.');
-      else { ctx.log('Restore FAILED: ' + (out.restoreError || 'unknown')); ctx.log(MANUAL_RESTORE_HINT); }
+      else if (out.restored === false) { ctx.log('Restore FAILED: ' + (out.restoreError || 'unknown')); ctx.log(MANUAL_RESTORE_HINT); }
+      else ctx.log('Router was not modified — nothing to restore.');
     }
     router.disconnect();
     return {

@@ -28,6 +28,15 @@ test('rejects hosts and domains that could smuggle shell into root commands', ()
   assert.throws(() => createInstallContext({ vps: { host: '198.51.100.7', port: '99999' } }), /port/i);
 });
 
+// The router phase bakes vps.host into uci routes, sing-box ip_cidr rules and
+// the egress-IP check — a hostname there breaks all three, so only IPv4 passes.
+test('vps.host must be a literal IPv4; router.host may stay a hostname', () => {
+  assert.throws(() => createInstallContext({ vps: { host: 'vpn.example.com' } }), /IPv4/i);
+  assert.throws(() => createInstallContext({ vps: { host: '2001:db8::1' } }), /IPv4/i);
+  const ctx = createInstallContext({ router: { host: 'openwrt.lan', password: 'p' } });
+  assert.strictEqual(ctx.inputs.router.host, 'openwrt.lan');
+});
+
 test('omitted host/domain stay undefined (router-only phase context)', () => {
   const ctx = createInstallContext({});
   assert.strictEqual(ctx.inputs.vps.host, undefined);

@@ -97,6 +97,27 @@ test('adopt awg: restarts the service instead of syncconf when it is not running
   assert.ok(!s.execed.some((c) => c.includes('awg syncconf')));
 });
 
+// A fresh install that died between starting the service and opening ufw
+// leaves udp/443 closed; the adopt path must heal that (idempotently), but
+// its rollback still may not close ports the original install relies on.
+test('adopt awg: opens the ufw port for the adopted listen port; rollback leaves ufw alone', async () => {
+  const s = new FakeSSHSession({
+    '# awg-server-pub': { stdout: SRVPUB + '\n' },
+    '# awg-adopt-keygen': { stdout: `${CPRIV}\n${CPUB}\n${PSK}\n` },
+    'systemctl is-active awg-quick@awg0': { stdout: 'active\n' },
+    'ufw status': { stdout: 'Status: active\n' },
+  });
+  s.written[AWG_CONF] = seededAwgConf(generateObfuscation());
+  const ctx = makeCtx(s);
+
+  await adoptServerAwg.execute(ctx);
+  assert.ok(s.execed.some((c) => c.includes('ufw allow 443/udp')), 'adopted listen port opened');
+
+  const before = s.execed.length;
+  await adoptServerAwg.rollback(ctx);
+  assert.ok(!s.execed.slice(before).some((c) => c.includes('ufw delete')), 'rollback must not close ufw ports');
+});
+
 test('adopt awg: verify checks the new peer is visible on awg0', async () => {
   const ok = new FakeSSHSession({ 'awg show awg0 peers': { stdout: `${'Z'.repeat(43)}=\n${CPUB}\n` } });
   const ctxOk = makeCtx(ok);

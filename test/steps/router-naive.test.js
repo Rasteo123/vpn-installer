@@ -32,6 +32,20 @@ function makeCtx(s) {
   return ctx;
 }
 
+// sing-box needs a moment to create the tun after the initd restart — verify
+// must poll instead of taking one fixed-delay sample.
+test('router.naive verify waits for the process and the tun to come up', async () => {
+  const s = new FakeSSHSession({
+    ...READY_SING_BOX,
+    'pgrep -f naive-client.json': { stdout: '1234\n' },
+    'ip link show tun-naive': { code: 0 },
+  });
+  s.respondOnce('pgrep -f naive-client.json', { stdout: '' });
+  const ctx = makeCtx(s);
+  ctx.timing = { pollIntervalMs: 5, pollTimeoutMs: 200 };
+  await routerNaive.verify(ctx); // must not throw
+});
+
 test('router.naive writes the client config (with the proxy password) as 0600', async () => {
   const s = new FakeSSHSession(READY_SING_BOX);
   const ctx = makeCtx(s);

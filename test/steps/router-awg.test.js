@@ -77,6 +77,26 @@ test('router.awg skips tool install when curl and jq are already present', async
   assert.ok(!s.execed.some((c) => c.startsWith('opkg install') && c.includes('curl')));
 });
 
+// The first handshake can take a few seconds after the network restart —
+// verify must poll for it instead of taking one fixed-delay sample.
+test('router.awg verify waits until the handshake appears', async () => {
+  const s = new FakeSSHSession({
+    'awg show awg0': { stdout: 'peer: SK\n  latest handshake: 2 seconds ago\n' },
+  });
+  s.respondOnce('awg show awg0', { stdout: 'peer: SK\n' });
+  s.respondOnce('awg show awg0', { stdout: 'peer: SK\n' });
+  const ctx = makeCtx(s);
+  ctx.timing = { pollIntervalMs: 5, pollTimeoutMs: 200 };
+  await routerAwg.verify(ctx); // must not throw
+});
+
+test('router.awg verify reports a missing handshake after the poll times out', async () => {
+  const s = new FakeSSHSession({ 'awg show awg0': { stdout: 'peer: SK\n' } });
+  const ctx = makeCtx(s);
+  ctx.timing = { pollIntervalMs: 5, pollTimeoutMs: 30 };
+  await assert.rejects(() => routerAwg.verify(ctx), /handshake/);
+});
+
 test('router.awg rollback removes its routes and awg0 from the wan zone, then commits', async () => {
   const s = new FakeSSHSession({ 'command -v uci': { code: 0, stdout: '/sbin/uci' } });
   const ctx = makeCtx(s);

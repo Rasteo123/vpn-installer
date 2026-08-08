@@ -1,4 +1,5 @@
 const { makeStep } = require('./step');
+const { waitFor } = require('./poll');
 const { vpnFailoverConf, vpnFailoverScript, vpnFailoverInitd } = require('../config/router-templates');
 
 const CONF = '/etc/vpn-failover.conf';
@@ -26,11 +27,17 @@ const routerFailover = makeStep({
 
   async verify(ctx) {
     const s = ctx.sessions.router;
-    await new Promise((r) => setTimeout(r, 12000));
     if ((await s.exec('pgrep -f vpn-failover.sh')).stdout.trim() === '') {
       throw new Error('router.failover: daemon not running');
     }
-    const state = (await s.exec('cat /var/run/vpn-failover.state 2>/dev/null')).stdout.trim();
+    // The daemon probes both tunnels (up to ~10s) before its first state
+    // write; poll for the state file instead of one fixed-delay sample.
+    const t = ctx.timing || {};
+    let state = '';
+    await waitFor(async () => {
+      state = (await s.exec('cat /var/run/vpn-failover.state 2>/dev/null')).stdout.trim();
+      return /^(awg|naive|wan)$/.test(state);
+    }, { timeoutMs: t.pollTimeoutMs ?? 30000, intervalMs: t.pollIntervalMs ?? 3000 });
     if (!/^(awg|naive|wan)$/.test(state)) {
       throw new Error(`router.failover: no valid route state chosen (state='${state}')`);
     }

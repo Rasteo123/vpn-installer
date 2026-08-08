@@ -1,4 +1,5 @@
 const { makeStep } = require('./step');
+const { waitFor } = require('./poll');
 const { updateRuCidrScript } = require('../config/router-templates');
 const { RU_DOMAINS } = require('../config/ru-domains');
 
@@ -28,6 +29,20 @@ const routerPbr = makeStep({
   title: 'PBR + RU bypass (router)',
   target: 'router',
 
+  // The RU_DOMAINS policy resolves through dnsmasq's nftset integration,
+  // which only dnsmasq-full compiles in. On stock dnsmasq the domain bypass
+  // would silently do nothing, so refuse before anything is changed.
+  async preflight(ctx) {
+    const s = ctx.sessions.router;
+    const out = (await s.exec('dnsmasq --version 2>/dev/null')).stdout;
+    if (!out.split(/\s+/).includes('nftset')) {
+      throw new Error(
+        'router.pbr: dnsmasq on the router lacks nftset support, so the RU domain bypass cannot work. '
+        + 'Install dnsmasq-full first (opkg update && opkg remove dnsmasq && opkg install dnsmasq-full) and re-run.'
+      );
+    }
+  },
+
   async execute(ctx) {
     const s = ctx.sessions.router;
     const log = ctx.log || (() => {});
@@ -53,8 +68,14 @@ const routerPbr = makeStep({
     await s.exec('/etc/init.d/pbr enable && /etc/init.d/pbr restart');
 
     log('Discovering RU nftset...');
-    await new Promise((r) => setTimeout(r, 6000));
-    const nftset = (await s.exec("nft list sets inet fw4 2>/dev/null | grep -oE 'pbr_wan_4_dst_ip[A-Za-z0-9_]*' | head -1")).stdout.trim();
+    // pbr creates its nftsets some seconds after the restart; poll instead of
+    // guessing one fixed delay (slow routers need longer than fast ones).
+    const t = ctx.timing || {};
+    let nftset = '';
+    await waitFor(async () => {
+      nftset = (await s.exec("nft list sets inet fw4 2>/dev/null | grep -oE 'pbr_wan_4_dst_ip[A-Za-z0-9_]*' | head -1")).stdout.trim();
+      return !!nftset;
+    }, { timeoutMs: t.pollTimeoutMs ?? 30000, intervalMs: t.pollIntervalMs ?? 3000 });
     if (!nftset) throw new Error('router.pbr: could not find the pbr wan dst nftset');
     ctx.results.pbr = { nftset };
 
@@ -78,6 +99,8 @@ const routerPbr = makeStep({
     const s = ctx.sessions.router;
     await s.exec(`${DELETE_RU_POLICY}; uci commit pbr`);
     await s.exec(`rm -f ${UPDATER}`);
+    // Drop the weekly cron entry too, or cron keeps invoking a removed script.
+    await s.exec("( crontab -l 2>/dev/null | grep -v update-ru-cidr.sh ) | crontab -");
   },
 });
 

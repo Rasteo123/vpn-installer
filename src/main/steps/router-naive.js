@@ -1,4 +1,5 @@
 const { makeStep } = require('./step');
+const { waitFor } = require('./poll');
 const { naiveClientJson, singBoxNaiveInitd } = require('../config/router-templates');
 
 const CONF = '/etc/sing-box/naive-client.json';
@@ -129,13 +130,17 @@ const routerNaive = makeStep({
 
   async verify(ctx) {
     const s = ctx.sessions.router;
-    await new Promise((r) => setTimeout(r, 4000));
-    if ((await s.exec('pgrep -f naive-client.json')).stdout.trim() === '') {
-      throw new Error('router.naive: sing-box (naive) not running');
-    }
-    if ((await s.exec('ip link show tun-naive')).code !== 0) {
-      throw new Error('router.naive: tun-naive interface missing');
-    }
+    // sing-box needs a moment to start and create the tun; poll for both.
+    const t = ctx.timing || {};
+    let running = false;
+    let tunUp = false;
+    await waitFor(async () => {
+      running = (await s.exec('pgrep -f naive-client.json')).stdout.trim() !== '';
+      tunUp = running && (await s.exec('ip link show tun-naive')).code === 0;
+      return running && tunUp;
+    }, { timeoutMs: t.pollTimeoutMs ?? 20000, intervalMs: t.pollIntervalMs ?? 2000 });
+    if (!running) throw new Error('router.naive: sing-box (naive) not running');
+    if (!tunUp) throw new Error('router.naive: tun-naive interface missing');
   },
 
   async rollback(ctx) {

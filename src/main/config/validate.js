@@ -26,6 +26,18 @@ function assertHost(value, label = 'host') {
   throw new Error(`${label}: недопустимый адрес или имя хоста '${v}'`);
 }
 
+// Strictly a literal IPv4. The router phase bakes this value into uci route
+// targets, sing-box ip_cidr rules and the egress-IP comparison — a hostname
+// or IPv6 would break all three, so it is refused up front.
+function assertIpv4(value, label = 'host') {
+  const v = String(value == null ? '' : value).trim();
+  if (!v) throw new Error(`${label}: пустое значение`);
+  if (!isIpv4(v)) {
+    throw new Error(`${label}: ожидается IPv4-адрес (например 203.0.113.10), получено '${v}'`);
+  }
+  return v;
+}
+
 // FQDN with at least one dot and an alphabetic-start TLD (rules out bare IPs).
 // Returns the trimmed, lowercased value or throws.
 function assertDomain(value, label = 'domain') {
@@ -46,4 +58,4 @@ function assertPort(value, label = 'port') {
   return n;
 }
 
-module.exports = { assertHost, assertDomain, assertPort };
+module.exports = { assertHost, assertIpv4, assertDomain, assertPort };
