@@ -65,6 +65,17 @@ test('nginxServerConf leaves TCP/443 to Naive and serves ACME on port 80', () =>
   assert.doesNotMatch(out, /ssl_preread/);
 });
 
+nodeTest('awgServerConf defaults to MTU 1420', () => {
+  const out = t.awgServerConf({
+    privateKey: 'PK',
+    obfuscation: REF_OBFUSCATION,
+    wanIface: 'eth0',
+    peerPublicKey: 'PUB',
+    presharedKey: 'PSK',
+  });
+  assert.match(out, /^MTU = 1420$/m);
+});
+
 nodeTest('Naive and AWG can share port 443 because Naive is pinned to TCP', () => {
   const out = t.naiveServerJson({ username: 'u', password: 'p', domain: 'ex.org' });
   assert.match(out, /"listen_port": 443/);

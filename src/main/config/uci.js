@@ -8,7 +8,9 @@ function uciBatch(lines) {
 function awgNetworkUci({
   clientPrivateKey,
   clientAddress = '10.66.66.2/32',
-  mtu = 1280,
+  // Must match the server side (templates.js awgServerConf): 1420 = 1500 minus
+  // WG-over-IPv4 overhead. 1280 fragmented large game UDP and broke Steam P2P.
+  mtu = 1420,
   obfuscation,
   serverPublicKey,
   presharedKey,

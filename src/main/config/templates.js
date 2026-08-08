@@ -6,7 +6,9 @@ function awgServerConf({
   serverAddress = '10.66.66.1/24',
   listenPort = 443,
   privateKey,
-  mtu = 1280,
+  // 1500 minus WG-over-IPv4 overhead. 1280 fragmented 1300-byte UDP (Steam
+  // relay pings); Valve relays ignore fragments, breaking P2P rendezvous.
+  mtu = 1420,
   obfuscation,
   wanIface,
   peerPublicKey,

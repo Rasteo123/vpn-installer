@@ -25,3 +25,16 @@ test('awgNetworkUci sets the awg0 interface, peer, endpoint route and split rout
   assert.match(s, /\.target='0\.0\.0\.0'/);
   assert.match(s, /\.target='128\.0\.0\.0'/);
 });
+
+test('awgNetworkUci defaults MTU to 1420', () => {
+  const lines = awgNetworkUci({
+    clientPrivateKey: 'CK',
+    obfuscation: {
+      jc: 6, jmin: 48, jmax: 96, s1: 64, s2: 132, s3: 196, s4: 88,
+      h1: 'a', h2: 'b', h3: 'c', h4: 'd', i1: 'I',
+    },
+    serverPublicKey: 'SK', presharedKey: 'PSK', vpsIp: '203.0.113.9',
+    wanGw: '198.51.100.1',
+  });
+  assert.match(lines.join('\n'), /set network\.awg0\.mtu='1420'/);
+});
