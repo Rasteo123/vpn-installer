@@ -11,6 +11,14 @@ files:
   - src/**/*
   - package.json
 
+# Pinned olcRTC binaries travel with the app: downloading them at install time
+# would fail exactly when this tool is needed most.
+extraResources:
+  - from: src/main/config/assets/olcrtc
+    to: olcrtc
+    filter:
+      - "**/*"
+
 # Windows 64-bit: installer (NSIS) + standalone portable .exe
 win:
   target:

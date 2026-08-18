@@ -1,0 +1,5 @@
+# source_repository=https://github.com/openlibrecommunity/olcrtc.git
+# source_commit=48cae636f88e16863c99d4147bbc327a856cdf00
+# go_version=go1.26.3
+522ca8a23357f5897da11bb119a89fc0d392e981da641f7ae4976d4f1ff08820  olcrtc-linux-amd64
+9b46c24d9bd32d51c7052db54ea28dcaaff60ad3dec2901349d82f67d4575bec  olcrtc-linux-arm64
