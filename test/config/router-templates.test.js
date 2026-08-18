@@ -36,9 +36,11 @@ nodeTest('updateRuCidrScript reloads pbr and never touches nft itself', () => {
   assert.doesNotMatch(out, /add element/);
 });
 
+// vpn-failover.sh and .conf are no longer compared to the captured reference:
+// that snapshot predates the olcRTC tier, while the four-level version shipped
+// here is the one running on the live router. The behavioural assertions below
+// cover them instead.
 test('static failover assets match the captured reference', () => {
-  assert.strictEqual(normalize(r.vpnFailoverConf()), normalize(readReference('router/etc/vpn-failover.conf')));
-  assert.strictEqual(normalize(r.vpnFailoverScript()), normalize(readReference('router/usr/bin/vpn-failover.sh')));
   assert.strictEqual(normalize(r.vpnFailoverInitd()), normalize(readReference('router/etc/init.d/vpn-failover')));
   assert.strictEqual(normalize(r.singBoxNaiveInitd()), normalize(readReference('router/etc/init.d/sing-box-naive')));
 });
@@ -50,15 +52,18 @@ test('static failover assets match the captured reference', () => {
 nodeTest('failover re-applies routes when netifd re-installs them behind its back', () => {
   const script = r.vpnFailoverScript();
   assert.match(script, /cur_dev=\$\(ip route show "\$SPLIT_ROUTE_A"/);
-  assert.match(script, /\[ "\$want" != "\$active" \] \|\| \[ "\$cur_dev" != "\$desired_dev" \]/);
+  assert.match(script, /elif \[ "\$cur_dev" != "\$desired_dev" \]/);
+  // Re-asserting the tier already in force must not wait out the holddown.
+  assert.match(script, /elif \[ "\$cur_dev" != "\$desired_dev" \]; then\s+#[\s\S]*?apply_route "\$wanted"/);
 });
 
-nodeTest('failover removes VPN routes and records WAN when both tunnels fail', () => {
+nodeTest('failover removes VPN routes and falls open to WAN when every tunnel fails', () => {
   const script = r.vpnFailoverScript();
   assert.match(script, /wan\)\s+[\s\S]*ip route del "\$SPLIT_ROUTE_A"[\s\S]*ip route del "\$SPLIT_ROUTE_B"/);
-  assert.match(script, /echo "wan" > "\$STATE_FILE"/);
-  assert.match(script, /else\s+apply_route wan\s+fi/);
-  assert.match(script, /else\s+want=wan\s+fi/);
+  assert.match(script, /write_state "\$route_target"/);
+  // wan is the last resort in the shared selection table, not a special case
+  // spelled out in the daemon.
+  assert.match(r.vpnFailoverCore(), /printf '%s\\n' wan/);
   assert.doesNotMatch(script, /holding state/);
 });
 
@@ -95,4 +100,20 @@ nodeTest('loadRuCidrScript sends the list in chunks rather than one huge command
 nodeTest('loadRuCidrScript refuses to load a suspiciously small list', () => {
   const out = r.loadRuCidrScript({ nftset: 'pbr_wan_4_dst_ip_user' });
   assert.match(out, /-ge 1000/);
+});
+
+nodeTest('vpnFailoverCore exposes the four-level selection as pure functions', () => {
+  const core = r.vpnFailoverCore();
+  assert.match(core, /desired_target\(\)/);
+  assert.match(core, /needs_olcrtc\(\)/);
+  for (const tier of ['awg', 'naive', 'olcrtc', 'wan']) {
+    assert.match(core, new RegExp(`printf '%s\\\\n' ${tier}`), `tier ${tier} must be selectable`);
+  }
+});
+
+nodeTest('the failover daemon drives the olcrtc tier and its start timeout', () => {
+  assert.match(r.vpnFailoverScript(), /olcrtc/);
+  assert.match(r.vpnFailoverScript(), /core\.sh/);
+  assert.match(r.vpnFailoverConf(), /OLCRTC_START_TIMEOUT=\d+/);
+  assert.match(r.vpnFailoverConf(), /OLCRTC_SOCKS_PORT=8808/);
 });

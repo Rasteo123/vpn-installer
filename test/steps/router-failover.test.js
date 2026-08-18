@@ -42,3 +42,11 @@ test('router.failover verify rejects when no valid state ever appears', async ()
   ctx.timing = { pollIntervalMs: 5, pollTimeoutMs: 30 };
   await assert.rejects(() => routerFailover.verify(ctx), /route state/);
 });
+
+// The daemon sources core.sh, so it has to be on disk before the daemon runs.
+test('router.failover deploys the shared core alongside the daemon', async () => {
+  const s = new FakeSSHSession();
+  await routerFailover.execute(makeCtx(s));
+  assert.ok(s.written['/usr/lib/vpn-failover/core.sh'], 'core.sh must be installed');
+  assert.match(s.written['/usr/lib/vpn-failover/core.sh'], /desired_target/);
+});

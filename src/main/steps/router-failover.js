@@ -1,6 +1,6 @@
 const { makeStep } = require('./step');
 const { waitFor } = require('./poll');
-const { vpnFailoverConf, vpnFailoverScript, vpnFailoverInitd } = require('../config/router-templates');
+const { vpnFailoverConf, vpnFailoverScript, vpnFailoverCore, vpnFailoverInitd } = require('../config/router-templates');
 
 const CONF = '/etc/vpn-failover.conf';
 const SCRIPT = '/usr/bin/vpn-failover.sh';
@@ -17,6 +17,9 @@ const routerFailover = makeStep({
     const log = ctx.log || (() => {});
     log('Writing failover daemon...');
     await s.writeFile(CONF, vpnFailoverConf());
+    // The daemon sources this; it must exist before the daemon starts.
+    await s.exec('mkdir -p /usr/lib/vpn-failover');
+    await s.writeFile('/usr/lib/vpn-failover/core.sh', vpnFailoverCore());
     await s.writeFile(SCRIPT, vpnFailoverScript());
     await s.exec(`chmod +x ${SCRIPT}`);
     await s.writeFile(INITD, vpnFailoverInitd());

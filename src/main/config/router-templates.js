@@ -136,6 +136,9 @@ return $_ret
 // Static files — deployed verbatim from canonical assets (no per-install values).
 function vpnFailoverConf() { return readAsset('vpn-failover.conf'); }
 function vpnFailoverScript() { return readAsset('vpn-failover.sh'); }
+// Pure tier-selection helpers the daemon sources; kept separate so the state
+// table can be tested without a router.
+function vpnFailoverCore() { return readAsset('vpn-failover-core.sh'); }
 function vpnFailoverInitd() { return readAsset('vpn-failover.initd'); }
 function singBoxNaiveInitd() { return readAsset('sing-box-naive.initd'); }
 
@@ -145,6 +148,7 @@ module.exports = {
   loadRuCidrScript,
   vpnFailoverConf,
   vpnFailoverScript,
+  vpnFailoverCore,
   vpnFailoverInitd,
   singBoxNaiveInitd,
 };
