@@ -59,3 +59,22 @@ test('the hotplug asset brings the uci interface up when the tun appears', () =>
   assert.match(h, /add\)\s*ifup tun_olcrtc/);
   assert.match(h, /remove\)\s*ifdown tun_olcrtc/);
 });
+
+// Packaging contract: the .gz binaries are excluded from the asar and shipped
+// as extraResources, which took the whole olcrtc asset directory with them.
+// The text assets must therefore be read through the same resolver, not from
+// __dirname — otherwise every template throws ENOENT in a packaged build.
+test('templates read assets through the shared resolver, not a hardcoded path', () => {
+  const src = require('fs').readFileSync(require.resolve('../../src/main/config/olcrtc-templates'), 'utf8');
+  assert.match(src, /resolveOlcrtcAssets/);
+  assert.doesNotMatch(src, /__dirname, 'assets', 'olcrtc'/);
+});
+
+test('every asset the templates need is present where extraResources copies from', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const dir = path.join(__dirname, '..', '..', 'src', 'main', 'config', 'assets', 'olcrtc');
+  for (const f of ['olcrtc-tun.json', 'olcrtc.service', 'olcrtc-client.initd', 'sing-box-olcrtc.initd', 'olcrtc-hotplug', 'SHA256SUMS']) {
+    assert.ok(fs.existsSync(path.join(dir, f)), `${f} must ship with the app`);
+  }
+});

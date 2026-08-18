@@ -2,9 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const ASSETS = path.join(__dirname, 'assets', 'olcrtc');
+const { resolveOlcrtcAssets } = require('./olcrtc-assets');
+
+// The binaries ship as extraResources, which moves the whole olcrtc asset
+// directory out of the asar — so the text assets live wherever the resolver
+// says, not next to this file.
 function readAsset(name) {
-  return fs.readFileSync(path.join(ASSETS, name), 'utf8');
+  return fs.readFileSync(path.join(resolveOlcrtcAssets().root, name), 'utf8');
 }
 
 const PRIMARY_HOST = 'conference.ct.placetime.team';
