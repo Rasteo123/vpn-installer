@@ -95,3 +95,50 @@ test('router.pbr rollback removes the weekly cron entry along with the updater',
   const cron = s.execed.find((c) => c.includes('crontab') && c.includes('update-ru-cidr.sh'));
   assert.ok(cron, 'rollback should rewrite crontab without the updater line');
 });
+
+function verifyCtx(overrides) {
+  const s = new FakeSSHSession({
+    'nft -j list set inet fw4 pbr_wan_4_dst_ip_user': { stdout: '6381\n' },
+    'nft list chain inet fw4 pbr_prerouting': { stdout: '1\n' },
+    'nft -c -f /var/run/pbr.nft': { stdout: '' },
+    ...overrides,
+  });
+  const ctx = makeCtx(s);
+  ctx.results.pbr = { nftset: 'pbr_wan_4_dst_ip_user' };
+  return ctx;
+}
+
+test('router.pbr verify passes on a healthy ruleset', async () => {
+  await routerPbr.verify(verifyCtx({}));
+});
+
+test('router.pbr verify fails when the set is underfilled', async () => {
+  const ctx = verifyCtx({ 'nft -j list set inet fw4 pbr_wan_4_dst_ip_user': { stdout: '12\n' } });
+  await assert.rejects(routerPbr.verify(ctx), /at least 1000/);
+});
+
+// The set can be full while PBR installed no rules at all — a corrupt
+// /var/run/pbr.nft leaves pbr_prerouting empty and everything falls into the
+// tunnel. Counting entries alone would call that healthy.
+test('router.pbr verify fails when no rule references the set', async () => {
+  const ctx = verifyCtx({ 'nft list chain inet fw4 pbr_prerouting': { stdout: '0\n' } });
+  await assert.rejects(routerPbr.verify(ctx), /no rule references/);
+});
+
+test('router.pbr verify fails when pbr generated an invalid ruleset file', async () => {
+  const ctx = verifyCtx({ 'nft -c -f /var/run/pbr.nft': { stdout: 'syntax error, unexpected -' } });
+  await assert.rejects(routerPbr.verify(ctx), /invalid/);
+});
+
+test('router.pbr rollback removes the include, both scripts, and reloads pbr', async () => {
+  const s = new FakeSSHSession();
+  const ctx = makeCtx(s);
+
+  await routerPbr.rollback(ctx);
+
+  const all = s.execed.join('\n');
+  assert.match(all, /load-ru-cidr\.sh/);
+  assert.match(all, /rm -f \/etc\/awg-bypass\/update-ru-cidr\.sh/);
+  assert.match(all, /crontab -/);
+  assert.match(all, /\/etc\/init\.d\/pbr reload/);
+});

@@ -93,20 +93,44 @@ const routerPbr = makeStep({
     ctx.results.pbr = { nftset: NFTSET };
   },
 
+  // Three checks, because a full nftset proves nothing on its own: PBR can
+  // fail to install any rules while the set sits there populated and unread.
   async verify(ctx) {
     const s = ctx.sessions.router;
-    const set = ctx.results.pbr && ctx.results.pbr.nftset;
-    if (!set) throw new Error('router.pbr: nftset not discovered');
-    const cnt = (await s.exec(`nft list set inet fw4 ${set} 2>/dev/null | grep -c '/'`)).stdout.trim();
-    if (parseInt(cnt, 10) < 10) throw new Error('router.pbr: RU nftset looks empty after update');
+
+    const count = parseInt(
+      (await s.exec(`nft -j list set inet fw4 ${NFTSET} 2>/dev/null | grep -o '"prefix"' | wc -l`)).stdout.trim(),
+      10,
+    );
+    if (!(count >= 1000)) {
+      throw new Error(`router.pbr: RU nftset holds ${count || 0} prefixes, expected at least 1000`);
+    }
+
+    const refs = parseInt(
+      (await s.exec(`nft list chain inet fw4 pbr_prerouting 2>/dev/null | grep -c '@${NFTSET}'`)).stdout.trim(),
+      10,
+    );
+    if (!(refs >= 1)) {
+      throw new Error(
+        `router.pbr: no rule references @${NFTSET} — pbr installed no rules. `
+        + 'Check the output of: nft -c -f /var/run/pbr.nft',
+      );
+    }
+
+    const check = (await s.exec('nft -c -f /var/run/pbr.nft 2>&1')).stdout.trim();
+    if (check) {
+      throw new Error(`router.pbr: pbr generated an invalid ruleset file: ${check}`);
+    }
   },
 
   async rollback(ctx) {
     const s = ctx.sessions.router;
-    await s.exec(`${DELETE_RU_POLICY}; uci commit pbr`);
-    await s.exec(`rm -f ${UPDATER}`);
+    await s.exec(`${DELETE_RU_POLICY}; ${DELETE_RU_INCLUDE}; uci commit pbr`);
+    await s.exec(`rm -f ${UPDATER} ${LOADER}`);
     // Drop the weekly cron entry too, or cron keeps invoking a removed script.
     await s.exec("( crontab -l 2>/dev/null | grep -v update-ru-cidr.sh ) | crontab -");
+    // Rebuild the ruleset without our include so the router is left consistent.
+    await s.exec('/etc/init.d/pbr reload || true');
   },
 });
 
