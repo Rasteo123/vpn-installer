@@ -1,0 +1,29 @@
+[Unit]
+Description=olcRTC fallback server
+After=network-online.target nss-lookup.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=olcrtc
+Group=olcrtc
+StateDirectory=olcrtc
+WorkingDirectory=/var/lib/olcrtc
+ExecStart=/usr/local/bin/olcrtc /etc/olcrtc/server.yaml
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

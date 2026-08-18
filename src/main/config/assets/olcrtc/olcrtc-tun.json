@@ -1,0 +1,46 @@
+{
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-olcrtc",
+      "interface_name": "tun-olcrtc",
+      "address": [
+        "172.31.0.6/30"
+      ],
+      "auto_route": false,
+      "strict_route": false,
+      "stack": "gvisor",
+      "mtu": 1280
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "olcrtc-socks",
+      "server": "127.0.0.1",
+      "server_port": 8808,
+      "version": "5"
+    },
+    {
+      "type": "direct",
+      "tag": "direct-out"
+    },
+    {
+      "type": "block",
+      "tag": "block-out"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "network": "udp",
+        "outbound": "block-out"
+      }
+    ],
+    "final": "olcrtc-socks"
+  }
+}
