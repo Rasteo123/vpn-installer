@@ -35,6 +35,8 @@ function vpsConnectConfig(vps) {
 function scrub(results) {
   const r = JSON.parse(JSON.stringify(results || {}));
   if (r.awg) { delete r.awg.clientPrivateKey; delete r.awg.presharedKey; }
+  // Shared between both hosts, so leaking it is worse than a per-host value.
+  if (r.olcrtc) delete r.olcrtc.key;
   return r;
 }
 
@@ -72,7 +74,7 @@ function registerHandlers() {
       ctx = createInstallContext({
         vps: { ...config.vps, auth: config.vps.auth },
         naiveDomain: config.naiveDomain,
-        protocols: { naive: !!config.naiveDomain },
+        protocols: { naive: !!config.naiveDomain, olcrtc: !!config.olcrtc },
       });
     } catch (e) { return { ok: false, error: e.message }; }
     ctx.inputs.certStaging = !!config.certStaging;
@@ -132,4 +134,4 @@ function registerHandlers() {
   });
 }
 
-module.exports = { registerHandlers };
+module.exports = { registerHandlers, scrub };

@@ -47,3 +47,32 @@ test('routerStepsFor: includes router.naive only when server naive results exist
     ['router.backup', 'router.awg', 'router.pbr', 'router.failover', 'router.verify']
   );
 });
+
+test('olcRTC steps are planned only when the protocol is enabled', () => {
+  const on = createInstallContext({ vps: { host: '203.0.113.9' }, protocols: { olcrtc: true } });
+  const off = createInstallContext({ vps: { host: '203.0.113.9' }, protocols: { olcrtc: false } });
+
+  assert.ok(serverStepsFor(on, {}).some((s) => s.id === 'server.olcrtc'));
+  assert.ok(!serverStepsFor(off, {}).some((s) => s.id === 'server.olcrtc'));
+
+  on.results.olcrtc = { roomPrimary: 'a', roomSecondary: 'b', key: 'c' };
+  assert.ok(routerStepsFor(on).some((s) => s.id === 'router.olcrtc'));
+  assert.ok(!routerStepsFor(off).some((s) => s.id === 'router.olcrtc'));
+});
+
+// router.olcrtc needs the server's key and rooms; without a server result its
+// preflight could not run at all, so it must not be planned.
+test('router.olcrtc is not planned when the server phase produced no olcRTC', () => {
+  const ctx = createInstallContext({ vps: { host: '203.0.113.9' }, protocols: { olcrtc: true } });
+  assert.ok(!routerStepsFor(ctx).some((s) => s.id === 'router.olcrtc'));
+});
+
+// The third tier belongs after PBR (its underlay rule needs pbr_output) and
+// before failover, which is what starts it.
+test('router.olcrtc sits between pbr and failover', () => {
+  const ctx = createInstallContext({ vps: { host: '203.0.113.9' }, protocols: { olcrtc: true } });
+  ctx.results.olcrtc = { roomPrimary: 'a', roomSecondary: 'b', key: 'c' };
+  const ids = routerStepsFor(ctx).map((s) => s.id);
+  assert.ok(ids.indexOf('router.pbr') < ids.indexOf('router.olcrtc'));
+  assert.ok(ids.indexOf('router.olcrtc') < ids.indexOf('router.failover'));
+});

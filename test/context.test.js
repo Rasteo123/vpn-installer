@@ -42,3 +42,9 @@ test('omitted host/domain stay undefined (router-only phase context)', () => {
   assert.strictEqual(ctx.inputs.vps.host, undefined);
   assert.strictEqual(ctx.inputs.naiveDomain, undefined);
 });
+
+// Opt-in: it costs a 20 MB payload and leans on public Jitsi hosts.
+test('the olcrtc protocol defaults to off', () => {
+  assert.strictEqual(createInstallContext({}).inputs.protocols.olcrtc, false);
+  assert.strictEqual(createInstallContext({ protocols: { olcrtc: true } }).inputs.protocols.olcrtc, true);
+});

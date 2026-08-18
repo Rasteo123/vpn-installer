@@ -7,6 +7,8 @@ const { routerNaive } = require('./router-naive');
 const { routerPbr } = require('./router-pbr');
 const { routerFailover } = require('./router-failover');
 const { routerVerify } = require('./router-verify');
+const { serverOlcrtc } = require('./server-olcrtc');
+const { routerOlcrtc } = require('./router-olcrtc');
 
 // The single place that decides WHICH steps a phase runs. Both the Electron
 // IPC handlers and the CLI runners assemble their step lists here.
@@ -19,6 +21,7 @@ function serverStepsFor(ctx, detected = {}) {
   const steps = [detected.awg ? adoptServerAwg : serverAwg];
   if (detected.naive) steps.push(adoptServerNaive);
   else if (ctx.inputs.protocols.naive) steps.push(serverNaive);
+  if (ctx.inputs.protocols.olcrtc) steps.push(serverOlcrtc);
   return steps;
 }
 
@@ -28,7 +31,12 @@ function serverStepsFor(ctx, detected = {}) {
 function routerStepsFor(ctx) {
   const steps = [routerBackup, routerAwg];
   if (ctx.results.naive) steps.push(routerNaive);
-  steps.push(routerPbr, routerFailover, routerVerify);
+  steps.push(routerPbr);
+  // Needs pbr_output for the underlay rule, and must precede failover, which
+  // is what starts it. Without server results it has no key or rooms, so it is
+  // not planned at all rather than failing its preflight.
+  if (ctx.inputs.protocols.olcrtc && ctx.results.olcrtc) steps.push(routerOlcrtc);
+  steps.push(routerFailover, routerVerify);
   return steps;
 }
 

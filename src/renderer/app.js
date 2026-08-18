@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     router: { host: '192.168.1.1', port: 22, password: '' },
     naive: false,
     naiveDomain: '',
+    olcrtc: false,
     results: {},
   };
 
@@ -134,11 +135,20 @@ document.addEventListener('DOMContentLoaded', () => {
     $('naiveExtra').classList.toggle('hidden', !state.naive);
   });
 
+  const cardOlcrtc = $('cardOlcrtc');
+  cardOlcrtc.addEventListener('click', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    state.olcrtc = !state.olcrtc;
+    cardOlcrtc.classList.toggle('protocol-card--selected', state.olcrtc);
+    cardOlcrtc.querySelector('.protocol-card__check').className = `protocol-card__check ${state.olcrtc ? 'protocol-card__check--on' : 'protocol-card__check--off'}`;
+    $('olcrtcExtra').classList.toggle('hidden', !state.olcrtc);
+  });
+
   $('btnInstall').addEventListener('click', async () => {
     state.naiveDomain = $('naiveDomain').value.trim();
     if (state.naive && !state.naiveDomain) { alert('Введите домен для NaiveProxy (DNS A-запись на IP сервера)'); return; }
     goToStep(3);
-    const res = await api.installServer({ vps: vpsPayload(), naiveDomain: state.naive ? state.naiveDomain : undefined });
+    const res = await api.installServer({ vps: vpsPayload(), naiveDomain: state.naive ? state.naiveDomain : undefined, olcrtc: !!state.olcrtc });
     if (res.ok) { state.results = { ...state.results, ...res.results }; $('btnToRouter').classList.remove('hidden'); }
     else addLog('serverLog', `Установка прервана: ${res.error || ''}`, 'error');
   });

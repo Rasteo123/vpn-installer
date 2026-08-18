@@ -30,6 +30,8 @@ function createInstallContext(input = {}) {
       protocols: {
         awg: true,
         naive: protocols.naive !== false,
+        // Opt-in: it costs a 20 MB payload and leans on public Jitsi hosts.
+        olcrtc: protocols.olcrtc === true,
       },
       naiveDomain: input.naiveDomain === undefined ? undefined : assertDomain(input.naiveDomain, 'Домен NaiveProxy'),
     },
