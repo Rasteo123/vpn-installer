@@ -13,33 +13,59 @@ function makeCtx(s) {
   return ctx;
 }
 
-test('router.pbr builds RU_DOMAINS policy and writes updater with discovered nftset', async () => {
-  const s = new FakeSSHSession({
-    'opkg list-installed': { stdout: 'yes' },
-    'nft list sets inet fw4': { stdout: 'pbr_wan_4_dst_ip_cfgABC123\n' },
-  });
+test('router.pbr builds the RU_DOMAINS policy and registers the loader include', async () => {
+  const s = new FakeSSHSession({ 'opkg list-installed': { stdout: 'yes' } });
   const ctx = makeCtx(s);
 
   await routerPbr.execute(ctx);
 
   assert.match(s.written['/tmp/pbr.uci'], /name='RU_DOMAINS_WAN'/);
   assert.match(s.written['/tmp/pbr.uci'], /dest_addr='ru'/);
-  assert.strictEqual(ctx.results.pbr.nftset, 'pbr_wan_4_dst_ip_cfgABC123');
+  assert.strictEqual(ctx.results.pbr.nftset, 'pbr_wan_4_dst_ip_user');
+  assert.match(s.written['/etc/awg-bypass/load-ru-cidr.sh'], /pbr_wan_4_dst_ip_user/);
+  assert.match(s.written['/tmp/pbr.uci'], /add pbr include/);
+  assert.match(s.written['/tmp/pbr.uci'], /path='\/etc\/awg-bypass\/load-ru-cidr\.sh'/);
+  assert.match(s.written['/tmp/pbr.uci'], /pbr\.@include\[-1\]\.enabled='1'/);
 });
 
-// pbr on a slow router creates its nftset a few seconds after the restart —
-// the discovery must retry instead of failing on the first empty answer.
-test('router.pbr retries nftset discovery until pbr creates the set', async () => {
-  const s = new FakeSSHSession({
-    'opkg list-installed': { stdout: 'yes' },
-    'nft list sets inet fw4': { stdout: 'pbr_wan_4_dst_ip_cfgABC123\n' },
-  });
-  s.respondOnce('nft list sets inet fw4', { stdout: '' });
-  s.respondOnce('nft list sets inet fw4', { stdout: '' });
+// Re-running the installer must not stack duplicate include sections.
+test('router.pbr removes a previously registered include before adding it', async () => {
+  const s = new FakeSSHSession({ 'opkg list-installed': { stdout: 'yes' } });
   const ctx = makeCtx(s);
 
   await routerPbr.execute(ctx);
-  assert.strictEqual(ctx.results.pbr.nftset, 'pbr_wan_4_dst_ip_cfgABC123');
+
+  const cleanup = s.execed.find((c) => c.includes('=include$'));
+  assert.ok(cleanup, 'expected an idempotent include cleanup command');
+  assert.match(cleanup, /load-ru-cidr\.sh/);
+});
+
+// The user set has a stable name, so the old grep/head -1 discovery — which
+// picked among the config-hashed sets essentially at random — is gone.
+test('router.pbr no longer guesses the nftset name', async () => {
+  const s = new FakeSSHSession({ 'opkg list-installed': { stdout: 'yes' } });
+  const ctx = makeCtx(s);
+
+  await routerPbr.execute(ctx);
+
+  assert.ok(
+    !s.execed.some((c) => c.includes('nft list sets')),
+    'nftset discovery must be gone — the user set has a stable name',
+  );
+});
+
+// The include is what populates the set, so it has to exist on disk before
+// the pbr restart that first runs it.
+test('router.pbr writes the loader before restarting pbr', async () => {
+  const s = new FakeSSHSession({ 'opkg list-installed': { stdout: 'yes' } });
+  const ctx = makeCtx(s);
+
+  await routerPbr.execute(ctx);
+
+  const chmodLoader = s.execed.findIndex((c) => c.includes('chmod +x /etc/awg-bypass/load-ru-cidr.sh'));
+  const restart = s.execed.findIndex((c) => c.includes('/etc/init.d/pbr enable'));
+  assert.ok(chmodLoader >= 0 && restart >= 0, 'expected both the loader install and the pbr restart');
+  assert.ok(chmodLoader < restart, 'loader must be installed before pbr restarts');
 });
 
 // The RU_DOMAINS policy resolves via dnsmasq nftset integration, which only

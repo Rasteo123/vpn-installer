@@ -1,14 +1,23 @@
 const { makeStep } = require('./step');
-const { waitFor } = require('./poll');
-const { updateRuCidrScript } = require('../config/router-templates');
+const { updateRuCidrScript, loadRuCidrScript } = require('../config/router-templates');
 const { RU_DOMAINS } = require('../config/ru-domains');
 
 const UPDATER = '/etc/awg-bypass/update-ru-cidr.sh';
+const LOADER = '/etc/awg-bypass/load-ru-cidr.sh';
+
+// PBR reserves this set for user includes and already wires it into
+// pbr_prerouting. Its name is stable, unlike the config-hashed policy sets.
+const NFTSET = 'pbr_wan_4_dst_ip_user';
 
 // Remove any existing RU_DOMAINS_WAN policy (idempotent re-runs).
 const DELETE_RU_POLICY =
   'for sct in $(uci show pbr | grep "=policy$" | cut -d= -f1); do ' +
   'if [ "$(uci -q get $sct.name)" = "RU_DOMAINS_WAN" ]; then uci delete $sct; fi; done';
+
+// Same, for our include section — otherwise re-runs stack duplicates.
+const DELETE_RU_INCLUDE =
+  'for sct in $(uci show pbr | grep "=include$" | cut -d= -f1); do ' +
+  `if [ "$(uci -q get $sct.path)" = "${LOADER}" ]; then uci delete $sct; fi; done`;
 
 function pbrConfigUci() {
   return [
@@ -53,8 +62,19 @@ const routerPbr = makeStep({
       await s.exec('opkg install pbr');
     }
 
+    // The include must be on disk before pbr restarts, because that restart is
+    // what first runs it and fills the set.
+    log('Installing RU-CIDR loader + updater...');
+    await s.exec('mkdir -p /etc/awg-bypass');
+    await s.writeFile(LOADER, loadRuCidrScript({ nftset: NFTSET }));
+    await s.exec(`chmod +x ${LOADER}`);
+    await s.writeFile(UPDATER, updateRuCidrScript());
+    await s.exec(`chmod +x ${UPDATER}`);
+    await s.exec(`${UPDATER} || true`);
+    await s.exec(`( crontab -l 2>/dev/null | grep -v update-ru-cidr.sh; echo '0 4 * * 0 ${UPDATER}' ) | crontab -`);
+
     log('Configuring PBR + RU_DOMAINS policy...');
-    await s.exec(DELETE_RU_POLICY);
+    await s.exec(`${DELETE_RU_POLICY}; ${DELETE_RU_INCLUDE}`);
     const lines = [
       ...pbrConfigUci(),
       'add pbr policy',
@@ -62,29 +82,15 @@ const routerPbr = makeStep({
       "set pbr.@policy[-1].interface='wan'",
     ];
     for (const d of RU_DOMAINS) lines.push(`add_list pbr.@policy[-1].dest_addr='${d}'`);
+    lines.push('add pbr include');
+    lines.push(`set pbr.@include[-1].path='${LOADER}'`);
+    lines.push("set pbr.@include[-1].enabled='1'");
     await s.writeFile('/tmp/pbr.uci', lines.join('\n') + '\n');
     await s.exec('uci batch < /tmp/pbr.uci');
     await s.exec('uci commit pbr');
     await s.exec('/etc/init.d/pbr enable && /etc/init.d/pbr restart');
 
-    log('Discovering RU nftset...');
-    // pbr creates its nftsets some seconds after the restart; poll instead of
-    // guessing one fixed delay (slow routers need longer than fast ones).
-    const t = ctx.timing || {};
-    let nftset = '';
-    await waitFor(async () => {
-      nftset = (await s.exec("nft list sets inet fw4 2>/dev/null | grep -oE 'pbr_wan_4_dst_ip[A-Za-z0-9_]*' | head -1")).stdout.trim();
-      return !!nftset;
-    }, { timeoutMs: t.pollTimeoutMs ?? 30000, intervalMs: t.pollIntervalMs ?? 3000 });
-    if (!nftset) throw new Error('router.pbr: could not find the pbr wan dst nftset');
-    ctx.results.pbr = { nftset };
-
-    log('Installing RU-CIDR updater + weekly cron...');
-    await s.exec('mkdir -p /etc/awg-bypass');
-    await s.writeFile(UPDATER, updateRuCidrScript({ nftset }));
-    await s.exec(`chmod +x ${UPDATER}`);
-    await s.exec(`${UPDATER} || true`);
-    await s.exec(`( crontab -l 2>/dev/null | grep -v update-ru-cidr.sh; echo '0 4 * * 0 ${UPDATER}' ) | crontab -`);
+    ctx.results.pbr = { nftset: NFTSET };
   },
 
   async verify(ctx) {
