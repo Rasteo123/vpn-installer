@@ -106,6 +106,40 @@ fi
 `;
 }
 
+// PBR include: repopulates the RU-CIDR nftset from the cached RIPE list on
+// every ruleset build, so the bypass survives `pbr reload` and reboots.
+//
+// PBR intercepts `nft` calls inside include scripts and appends their
+// arguments to its own batch file, so the command MUST be a single string
+// argument. `nft -f <file>` would be spliced in verbatim, corrupt
+// /var/run/pbr.nft, and make PBR install no rules at all.
+function loadRuCidrScript({ nftset }) {
+  return `#!/bin/sh
+RAWFILE='/etc/awg-bypass/ru_cidr.raw'
+TARGET_TABLE='inet fw4'
+NFTSET='${nftset}'
+CHUNK=500
+
+[ -s "$RAWFILE" ] || { logger -t ru-cidr "No cached CIDR file, skipping"; return 1; }
+
+_count=$(wc -l < "$RAWFILE")
+[ "$_count" -ge 1000 ] || { logger -t ru-cidr "ERROR: list too small ($_count), skipping"; return 1; }
+
+_ret=0
+_i=0
+while [ "$_i" -lt "$_count" ]; do
+	_elems=$(sed -n "$((_i+1)),$((_i+CHUNK))p" "$RAWFILE" | tr '\\n' ',' | sed 's/,$//')
+	if [ -n "$_elems" ]; then
+		nft "add element $TARGET_TABLE $NFTSET { $_elems }" || _ret=1
+	fi
+	_i=$((_i+CHUNK))
+done
+
+logger -t ru-cidr "Queued $_count RU prefixes into $NFTSET (ret=$_ret)"
+return $_ret
+`;
+}
+
 // Static files — deployed verbatim from canonical assets (no per-install values).
 function vpnFailoverConf() { return readAsset('vpn-failover.conf'); }
 function vpnFailoverScript() { return readAsset('vpn-failover.sh'); }
@@ -115,6 +149,7 @@ function singBoxNaiveInitd() { return readAsset('sing-box-naive.initd'); }
 module.exports = {
   naiveClientJson,
   updateRuCidrScript,
+  loadRuCidrScript,
   vpnFailoverConf,
   vpnFailoverScript,
   vpnFailoverInitd,

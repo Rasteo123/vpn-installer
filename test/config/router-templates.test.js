@@ -50,3 +50,38 @@ nodeTest('failover removes VPN routes and records WAN when both tunnels fail', (
   assert.match(script, /else\s+want=wan\s+fi/);
   assert.doesNotMatch(script, /holding state/);
 });
+
+// The template tests below assert on rendered strings only, so they must run
+// even without a captured reference snapshot — hence nodeTest, not the
+// snapshot-gated `test` alias above.
+
+nodeTest('loadRuCidrScript loads the cached list into the given nftset', () => {
+  const out = r.loadRuCidrScript({ nftset: 'pbr_wan_4_dst_ip_user' });
+  assert.match(out, /pbr_wan_4_dst_ip_user/);
+  assert.match(out, /ru_cidr\.raw/);
+  assert.match(out, /TARGET_TABLE='inet fw4'/);
+  assert.match(out, /add element \$TARGET_TABLE \$NFTSET/);
+});
+
+// PBR intercepts `nft` inside include scripts and splices the arguments into
+// /var/run/pbr.nft. `nft -f <file>` therefore corrupts that file and PBR
+// installs NO rules at all, silently. Only the single-string form is safe.
+nodeTest('loadRuCidrScript never uses nft -f', () => {
+  const out = r.loadRuCidrScript({ nftset: 'pbr_wan_4_dst_ip_user' });
+  const calls = out.split('\n').filter((l) => /^\s*nft\s/.test(l));
+  assert.ok(calls.length > 0, 'expected at least one nft invocation');
+  for (const call of calls) {
+    assert.doesNotMatch(call, /nft\s+-f/, `forbidden "nft -f" form: ${call}`);
+    assert.match(call, /nft\s+"add element/, `unexpected nft form: ${call}`);
+  }
+});
+
+nodeTest('loadRuCidrScript sends the list in chunks rather than one huge command', () => {
+  const out = r.loadRuCidrScript({ nftset: 'pbr_wan_4_dst_ip_user' });
+  assert.match(out, /CHUNK=\d+/);
+});
+
+nodeTest('loadRuCidrScript refuses to load a suspiciously small list', () => {
+  const out = r.loadRuCidrScript({ nftset: 'pbr_wan_4_dst_ip_user' });
+  assert.match(out, /-ge 1000/);
+});
