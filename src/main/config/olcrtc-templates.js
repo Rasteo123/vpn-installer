@@ -13,7 +13,7 @@ const SECONDARY_HOST = 'meet.mamba.group';
 // A room name shared by every install would be a shared fingerprint — the same
 // reason the AWG obfuscation parameters are randomized per install.
 function generateRoomName() {
-  return crypto.randomBytes(16).toString('hex');
+  return crypto.randomBytes(24).toString('hex');
 }
 
 function profiles({ roomPrimary, roomSecondary }) {

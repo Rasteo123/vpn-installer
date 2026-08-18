@@ -5,7 +5,7 @@ const t = require('../../src/main/config/olcrtc-templates');
 test('generateRoomName returns 32 hex chars and differs between calls', () => {
   const a = t.generateRoomName();
   const b = t.generateRoomName();
-  assert.match(a, /^[0-9a-f]{32}$/);
+  assert.match(a, /^[0-9a-f]{48}$/, 'must match the entropy of the qualified deployment');
   assert.notStrictEqual(a, b);
 });
 
