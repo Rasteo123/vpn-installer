@@ -1,5 +1,6 @@
 const { Client } = require('ssh2');
 const { takeLines } = require('./line-buffer');
+const crypto = require('crypto');
 const { KnownHosts, verifyHostKey } = require('./known-hosts');
 
 const DEFAULT_EXEC_TIMEOUT_MS = 300000;
@@ -235,11 +236,16 @@ class SSHSession {
   }
 
   /**
-   * Write string content to remote file.
+   * Write a remote file, preferring SFTP and falling back to exec.
+   *
+   * OpenWrt's Dropbear has no SFTP subsystem, so the fallback is the only
+   * path that works on the router. Base64 is safe to embed in single quotes
+   * (its alphabet is A-Za-z0-9+/=), so the chunks need no escaping.
+   *
    * @param {string} remotePath
-   * @param {string} content
+   * @param {string|Buffer} content
    * @param {Object} [opts]
-   * @param {number} [opts.mode] - File mode (e.g. 0o600) applied at create time.
+   * @param {number} [opts.mode] - File mode (e.g. 0o600).
    * @returns {Promise<void>}
    */
   async writeFile(remotePath, content, opts = {}) {
@@ -247,6 +253,22 @@ class SSHSession {
       throw new Error('SSH session is not connected');
     }
 
+    const buf = Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'utf8');
+
+    if (!this._sftpUnavailable) {
+      try {
+        await this._writeFileViaSftp(remotePath, buf, opts);
+        return;
+      } catch (error) {
+        // One probe per session: once SFTP is known missing, stop paying for it.
+        this._sftpUnavailable = true;
+      }
+    }
+
+    await this._writeFileViaExec(remotePath, buf, opts);
+  }
+
+  _writeFileViaSftp(remotePath, buf, opts) {
     return new Promise((resolve, reject) => {
       this.conn.sftp((err, sftp) => {
         if (err) {
@@ -267,9 +289,38 @@ class SSHSession {
           resolve();
         });
 
-        writeStream.end(content, 'utf8');
+        writeStream.end(buf);
       });
     });
+  }
+
+  async _writeFileViaExec(remotePath, buf, opts) {
+    const q = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+    const target = q(remotePath);
+    const staging = q(`${remotePath}.part`);
+    const b64 = buf.toString('base64');
+    const CHUNK = 65536;
+
+    await this.exec(`: > ${staging}`);
+    for (let i = 0; i < b64.length; i += CHUNK) {
+      await this.exec(`printf '%s' '${b64.slice(i, i + CHUNK)}' >> ${staging}`);
+    }
+    await this.exec(`base64 -d ${staging} > ${target} && rm -f ${staging}`);
+
+    const size = parseInt((await this.exec(`wc -c < ${target}`)).stdout.trim(), 10);
+    if (size !== buf.length) {
+      throw new Error(`Failed to write file ${remotePath}: size mismatch (${size} != ${buf.length})`);
+    }
+
+    const expected = crypto.createHash('sha256').update(buf).digest('hex');
+    const actual = (await this.exec(`sha256sum ${target} | cut -d' ' -f1`)).stdout.trim();
+    if (actual !== expected) {
+      throw new Error(`Failed to write file ${remotePath}: checksum mismatch`);
+    }
+
+    if (opts.mode !== undefined) {
+      await this.exec(`chmod ${opts.mode.toString(8).padStart(3, '0')} ${target}`);
+    }
   }
 
   /**
