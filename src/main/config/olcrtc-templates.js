@@ -70,6 +70,7 @@ function olcrtcTunJson() { return readAsset('olcrtc-tun.json'); }
 function olcrtcServiceUnit() { return readAsset('olcrtc.service'); }
 function olcrtcClientInitd() { return readAsset('olcrtc-client.initd'); }
 function singBoxOlcrtcInitd() { return readAsset('sing-box-olcrtc.initd'); }
+function olcrtcHotplug() { return readAsset('olcrtc-hotplug'); }
 
 module.exports = {
   generateRoomName,
@@ -80,4 +81,5 @@ module.exports = {
   olcrtcServiceUnit,
   olcrtcClientInitd,
   singBoxOlcrtcInitd,
+  olcrtcHotplug,
 };

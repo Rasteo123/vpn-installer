@@ -8,6 +8,7 @@ const {
   olcrtcUnderlayNft,
   olcrtcClientInitd,
   singBoxOlcrtcInitd,
+  olcrtcHotplug,
 } = require('../config/olcrtc-templates');
 
 const BIN = '/usr/bin/olcrtc';
@@ -17,10 +18,54 @@ const TUN_JSON = '/etc/sing-box/olcrtc-tun.json';
 const NFT_INCLUDE = '/usr/share/nftables.d/ruleset-post/31-olcrtc-underlay.nft';
 const CLIENT_INITD = '/etc/init.d/olcrtc-client';
 const SINGBOX_INITD = '/etc/init.d/sing-box-olcrtc';
+const HOTPLUG = '/etc/hotplug.d/net/95-olcrtc-tun';
 const SOCKS_PORT = 8808;
 const PREFERRED_UID = 45321;
 
 const ARCH_BINARY = { aarch64: 'arm64', x86_64: 'amd64' };
+
+// sing-box creates tun-olcrtc at runtime; uci needs an interface to attach a
+// firewall zone to.
+const SETUP_TUN_OLCRTC = [
+  'uci -q delete network.tun_olcrtc',
+  'uci set network.tun_olcrtc=interface',
+  "uci set network.tun_olcrtc.proto='none'",
+  "uci set network.tun_olcrtc.device='tun-olcrtc'",
+  "uci set network.tun_olcrtc.auto='0'",
+].join('; ');
+
+// Without this the tunnel comes up and the router itself can use it, while LAN
+// traffic is rejected: no masquerade, no lan->olcrtc forwarding. mtu_fix
+// matters because the tun runs at 1280.
+const SETUP_OLCRTC_FWD = `
+if ! uci show firewall | grep -q "name='olcrtc_fwd'"; then
+  uci add firewall zone
+  uci set firewall.@zone[-1].name='olcrtc_fwd'
+  uci set firewall.@zone[-1].input='REJECT'
+  uci set firewall.@zone[-1].output='ACCEPT'
+  uci set firewall.@zone[-1].forward='REJECT'
+  uci set firewall.@zone[-1].masq='1'
+  uci set firewall.@zone[-1].mtu_fix='1'
+  uci add_list firewall.@zone[-1].network='tun_olcrtc'
+fi
+if ! uci show firewall | grep -q "dest='olcrtc_fwd'"; then
+  uci add firewall forwarding
+  uci set firewall.@forwarding[-1].src='lan'
+  uci set firewall.@forwarding[-1].dest='olcrtc_fwd'
+fi
+`;
+
+// Reverse of the above: drop the named zone and its forwarding by name,
+// whatever anonymous index they ended up at.
+const TEARDOWN_OLCRTC_FWD = `
+for sct in $(uci show firewall | grep "=forwarding$" | cut -d= -f1); do
+  if [ "$(uci -q get $sct.dest)" = "olcrtc_fwd" ]; then uci delete $sct; fi
+done
+for sct in $(uci show firewall | grep "=zone$" | cut -d= -f1); do
+  if [ "$(uci -q get $sct.name)" = "olcrtc_fwd" ]; then uci delete $sct; fi
+done
+uci -q delete network.tun_olcrtc
+`;
 
 function versionAtLeast(actual, required) {
   const a = String(actual).split('.').map(Number);
@@ -114,7 +159,7 @@ const routerOlcrtc = makeStep({
     );
     await s.exec(`chown -R ${uid}:${uid} ${CONF_DIR}`);
 
-    await s.exec('mkdir -p /etc/sing-box /usr/share/nftables.d/ruleset-post');
+    await s.exec('mkdir -p /etc/sing-box /usr/share/nftables.d/ruleset-post /etc/hotplug.d/net');
     await s.writeFile(TUN_JSON, olcrtcTunJson());
     await s.writeFile(NFT_INCLUDE, olcrtcUnderlayNft({ uid }));
 
@@ -122,7 +167,11 @@ const routerOlcrtc = makeStep({
     // these run.
     await s.writeFile(CLIENT_INITD, olcrtcClientInitd(), { mode: 0o755 });
     await s.writeFile(SINGBOX_INITD, singBoxOlcrtcInitd(), { mode: 0o755 });
+    await s.writeFile(HOTPLUG, olcrtcHotplug(), { mode: 0o755 });
 
+    // The tunnel is useless to the LAN without a zone to masquerade out of.
+    await s.exec(`${SETUP_TUN_OLCRTC}; uci commit network`);
+    await s.exec(`${SETUP_OLCRTC_FWD}; uci commit firewall`);
     await s.exec('/etc/init.d/firewall reload >/dev/null 2>&1 || true');
   },
 
@@ -170,9 +219,10 @@ const routerOlcrtc = makeStep({
     const s = ctx.sessions.router;
     await s.exec(`${SINGBOX_INITD} stop 2>/dev/null || true`);
     await s.exec(`${CLIENT_INITD} stop 2>/dev/null || true`);
-    await s.exec(`rm -f ${BIN} ${TUN_JSON} ${NFT_INCLUDE} ${CLIENT_INITD} ${SINGBOX_INITD}`);
+    await s.exec(`rm -f ${BIN} ${TUN_JSON} ${NFT_INCLUDE} ${CLIENT_INITD} ${SINGBOX_INITD} ${HOTPLUG}`);
     await s.exec(`rm -rf ${CONF_DIR}`);
     await s.exec("sed -i '/^olcrtc:/d' /etc/passwd /etc/group || true");
+    await s.exec(`${TEARDOWN_OLCRTC_FWD}; uci commit firewall; uci commit network`);
     await s.exec('/etc/init.d/firewall reload >/dev/null 2>&1 || true');
   },
 });

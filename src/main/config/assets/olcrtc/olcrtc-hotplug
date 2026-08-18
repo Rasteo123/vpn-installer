@@ -1,0 +1,12 @@
+#!/bin/sh
+# fw4 attaches a zone to a device only while the uci interface is up, and the
+# masquerade rule is what lets LAN traffic leave through the tunnel. sing-box
+# creates tun-olcrtc at runtime, so bring the interface up the moment the
+# device appears — a plain `firewall reload` is not enough, measured on the
+# router.
+[ "$DEVICE" = "tun-olcrtc" ] || exit 0
+
+case "$ACTION" in
+    add) ifup tun_olcrtc ;;
+    remove) ifdown tun_olcrtc ;;
+esac

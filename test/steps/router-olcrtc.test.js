@@ -130,3 +130,59 @@ test('router.olcrtc rollback removes everything it installed', async () => {
   assert.match(all, /rm -rf \/etc\/olcrtc/);
   assert.match(all, /31-olcrtc-underlay\.nft/);
 });
+
+// Found on a live run: the tunnel came up and the router itself could use it,
+// but LAN traffic was rejected — tun-olcrtc belonged to no firewall zone, so
+// there was no masquerade and no lan->olcrtc forwarding. The third tier exists
+// for the home network, so without this it is useless where it matters.
+test('router.olcrtc puts tun-olcrtc in a masqueraded zone with lan forwarding', async () => {
+  const s = okSession();
+  const ctx = makeCtx(s);
+  await routerOlcrtc.preflight(ctx);
+  await routerOlcrtc.execute(ctx);
+
+  const all = s.execed.join('\n');
+  assert.match(all, /uci set network\.tun_olcrtc=interface/);
+  assert.match(all, /uci set network\.tun_olcrtc\.device='tun-olcrtc'/);
+  assert.match(all, /name='olcrtc_fwd'/);
+  assert.match(all, /masq='1'/);
+  assert.match(all, /mtu_fix='1'/, 'the tun runs at mtu 1280, so clamping matters');
+  assert.match(all, /network='tun_olcrtc'/);
+  assert.match(all, /src='lan'/);
+  assert.match(all, /dest='olcrtc_fwd'/);
+});
+
+test('router.olcrtc firewall wiring is idempotent across re-runs', async () => {
+  const s = okSession();
+  const ctx = makeCtx(s);
+  await routerOlcrtc.preflight(ctx);
+  await routerOlcrtc.execute(ctx);
+
+  const all = s.execed.join('\n');
+  assert.match(all, /if ! uci show firewall \| grep -q "name='olcrtc_fwd'"/);
+  assert.match(all, /if ! uci show firewall \| grep -q "dest='olcrtc_fwd'"/);
+});
+
+test('router.olcrtc rollback removes the zone and forwarding it added', async () => {
+  const s = okSession();
+  await routerOlcrtc.rollback(makeCtx(s));
+  const all = s.execed.join('\n');
+  assert.match(all, /olcrtc_fwd/);
+  assert.match(all, /network\.tun_olcrtc/);
+});
+
+test('router.olcrtc installs the hotplug hook that attaches the firewall zone', async () => {
+  const s = okSession();
+  const ctx = makeCtx(s);
+  await routerOlcrtc.preflight(ctx);
+  await routerOlcrtc.execute(ctx);
+
+  assert.match(s.written['/etc/hotplug.d/net/95-olcrtc-tun'], /ifup tun_olcrtc/);
+  assert.strictEqual(s.modes['/etc/hotplug.d/net/95-olcrtc-tun'], 0o755);
+});
+
+test('router.olcrtc rollback removes the hotplug hook', async () => {
+  const s = okSession();
+  await routerOlcrtc.rollback(makeCtx(s));
+  assert.match(s.execed.join('\n'), /95-olcrtc-tun/);
+});

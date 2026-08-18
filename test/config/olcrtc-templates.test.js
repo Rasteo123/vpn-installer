@@ -49,3 +49,13 @@ test('the shipped init scripts and unit match what the steps expect', () => {
   assert.match(t.olcrtcServiceUnit(), /ExecStart=\/usr\/local\/bin\/olcrtc/);
   assert.match(t.olcrtcServiceUnit(), /^User=olcrtc$/m);
 });
+
+// Measured on the router: a firewall reload does not attach the zone, only
+// bringing the uci interface up does — and the device only exists while the
+// tier runs, so the trigger has to be the device appearing.
+test('the hotplug asset brings the uci interface up when the tun appears', () => {
+  const h = t.olcrtcHotplug();
+  assert.match(h, /\$DEVICE" = "tun-olcrtc"/);
+  assert.match(h, /add\)\s*ifup tun_olcrtc/);
+  assert.match(h, /remove\)\s*ifdown tun_olcrtc/);
+});
