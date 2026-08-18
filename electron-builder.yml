@@ -9,6 +9,8 @@ directories:
 # Bundle the app source + production deps (electron-builder pulls node_modules deps it needs).
 files:
   - src/**/*
+  # Shipped via extraResources instead, so they are not packed twice.
+  - "!src/main/config/assets/olcrtc/*.gz"
   - package.json
 
 # Pinned olcRTC binaries travel with the app: downloading them at install time

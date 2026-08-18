@@ -33,3 +33,16 @@ test('loadBinary decompresses the shipped binary and its hash matches the manife
 test('loadBinary rejects an unknown architecture', async () => {
   await assert.rejects(loadBinary('mips'), /unsupported architecture/);
 });
+
+// In a packaged build the binaries live in extraResources, outside the asar,
+// so the resolver must not keep pointing at the source tree that no longer
+// exists there.
+test('resolveOlcrtcAssets detects a packaged layout when the source tree is absent', () => {
+  const a = resolveOlcrtcAssets({ sourceRoot: '/definitely/not/here', resourcesPath: '/res' });
+  assert.strictEqual(a.root, path.join('/res', 'olcrtc'));
+});
+
+test('resolveOlcrtcAssets uses the source tree when the manifest is there', () => {
+  const a = resolveOlcrtcAssets({ resourcesPath: '/res' });
+  assert.match(a.root, /assets[/\\]olcrtc$/);
+});
