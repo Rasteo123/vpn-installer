@@ -294,18 +294,55 @@ class SSHSession {
     });
   }
 
+  // Streams the payload straight into the command's stdin. Encoding it was
+  // tried first and failed on real hardware: this firmware's busybox ships no
+  // `base64` applet, so the decode step exited 127 and left an empty file.
+  // Raw bytes need no remote tool at all, and one round trip beats hundreds.
+  _execWithInput(command, input, opts = {}) {
+    const timeoutMs = opts.timeoutMs || DEFAULT_EXEC_TIMEOUT_MS;
+    return new Promise((resolve, reject) => {
+      this.conn.exec(command, (err, stream) => {
+        if (err) {
+          reject(new Error(`SSH exec failed: ${err.message}`));
+          return;
+        }
+
+        const timeout = setTimeout(() => {
+          stream.close();
+          reject(new Error(`SSH write timed out after ${timeoutMs}ms: ${command}`));
+        }, timeoutMs);
+
+        let stdout = '';
+        let stderr = '';
+        // Measured against a real router: ssh2 keeps the channel paused until
+        // stdout has a consumer, so without this listener 'close' never fires
+        // and the write hangs forever.
+        stream.on('data', (d) => { stdout += d.toString(); });
+        stream.stderr.on('data', (d) => { stderr += d.toString(); });
+        stream.on('error', (e) => {
+          clearTimeout(timeout);
+          reject(new Error(`SSH stream error: ${e.message}`));
+        });
+        stream.on('close', (code) => {
+          clearTimeout(timeout);
+          resolve({ code: code === undefined ? 0 : code, stdout, stderr });
+        });
+
+        stream.end(input);
+      });
+    });
+  }
+
   async _writeFileViaExec(remotePath, buf, opts) {
     const q = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
     const target = q(remotePath);
-    const staging = q(`${remotePath}.part`);
-    const b64 = buf.toString('base64');
-    const CHUNK = 65536;
 
-    await this.exec(`: > ${staging}`);
-    for (let i = 0; i < b64.length; i += CHUNK) {
-      await this.exec(`printf '%s' '${b64.slice(i, i + CHUNK)}' >> ${staging}`);
+    const res = await this._execWithInput(`cat > ${target}`, buf, { timeoutMs: opts.timeoutMs });
+    if (res.code !== 0) {
+      throw new Error(
+        `Failed to write file ${remotePath}: exit ${res.code}${res.stderr ? ` — ${res.stderr.trim()}` : ''}`,
+      );
     }
-    await this.exec(`base64 -d ${staging} > ${target} && rm -f ${staging}`);
 
     const size = parseInt((await this.exec(`wc -c < ${target}`)).stdout.trim(), 10);
     if (size !== buf.length) {
