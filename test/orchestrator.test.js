@@ -104,3 +104,86 @@ test('an already-applied step is skipped (no execute/verify) but counts as compl
   assert.deepStrictEqual(res, { ok: true, completed: ['a', 'b'] });
   assert.ok(events.some((e) => e.type === 'step-skip' && e.stepId === 'a'));
 });
+
+const { SkippableError } = require('../src/main/steps/skippable');
+
+// A step whose preflight declines: the install should carry on without it.
+function skippingStep(id, reason, hooks = {}) {
+  return makeStep({
+    id,
+    target: 'router',
+    preflight: async () => { throw new SkippableError(reason); },
+    execute: async () => { throw new Error(`${id} must never execute`); },
+    ...hooks,
+  });
+}
+
+test('a preflight SkippableError skips its step and lets the run continue', async () => {
+  const events = [];
+  const ran = [];
+  const orch = new Orchestrator((e) => events.push(e));
+
+  const steps = [
+    makeStep({ id: 'a', target: 'vps', execute: async () => { ran.push('a'); } }),
+    skippingStep('b', 'router is mips, no binary shipped'),
+    makeStep({ id: 'c', target: 'vps', execute: async () => { ran.push('c'); } }),
+  ];
+
+  const result = await orch.run(steps, createInstallContext({}), {});
+
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(ran, ['a', 'c']);
+  assert.deepStrictEqual(result.completed, ['a', 'c']);
+  const skip = events.find((e) => e.type === 'step-skip' && e.stepId === 'b');
+  assert.ok(skip, 'expected a step-skip event for b');
+  assert.match(skip.reason, /mips/);
+});
+
+// A step that never ran owns no state, so rolling it back would be wrong.
+test('a skipped step is not rolled back when a later step fails', async () => {
+  const rolled = [];
+  const orch = new Orchestrator(() => {});
+
+  const steps = [
+    skippingStep('b', 'not supported here', { rollback: async () => { rolled.push('b'); } }),
+    makeStep({
+      id: 'c',
+      target: 'vps',
+      execute: async () => { throw new Error('boom'); },
+      rollback: async () => { rolled.push('c'); },
+    }),
+  ];
+
+  const result = await orch.run(steps, createInstallContext({}), { rollbackOnFailure: true });
+
+  assert.strictEqual(result.ok, false);
+  assert.ok(!rolled.includes('b'), 'a step that never ran must not be rolled back');
+});
+
+test('preflightAll also honours SkippableError', async () => {
+  const ran = [];
+  const orch = new Orchestrator(() => {});
+  const steps = [
+    skippingStep('b', 'nope'),
+    makeStep({ id: 'c', target: 'vps', execute: async () => { ran.push('c'); } }),
+  ];
+
+  const result = await orch.run(steps, createInstallContext({}), { preflightAll: true });
+
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(ran, ['c']);
+});
+
+// Skipping is opt-in: an ordinary preflight failure must still stop everything.
+test('a non-skippable preflight failure still fails the run', async () => {
+  const orch = new Orchestrator(() => {});
+  const steps = [makeStep({
+    id: 'b',
+    target: 'router',
+    preflight: async () => { throw new Error('dnsmasq lacks nftset'); },
+    execute: async () => {},
+  })];
+  const result = await orch.run(steps, createInstallContext({}), {});
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.failedStep, 'b');
+});

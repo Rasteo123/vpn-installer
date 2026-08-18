@@ -1,6 +1,8 @@
 // Runs an ordered list of steps against an InstallContext.
 // Phases per step: preflight -> execute -> verify. On failure, optionally
 // rolls back the failed step then previously-completed steps in reverse.
+const { SkippableError } = require('./steps/skippable');
+
 class Orchestrator {
   constructor(onEvent = () => {}) {
     this.onEvent = onEvent;
@@ -14,12 +16,18 @@ class Orchestrator {
     const { preflightAll = false, rollbackOnFailure = false } = opts;
     const total = steps.length;
 
+    const skipped = new Map();
+
     if (preflightAll) {
       for (const step of steps) {
         this._emit({ type: 'preflight', stepId: step.id });
         try {
           await step.preflight(ctx);
         } catch (error) {
+          if (error instanceof SkippableError) {
+            skipped.set(step.id, error.message);
+            continue;
+          }
           this._emit({ type: 'step-fail', stepId: step.id, phase: 'preflight', error: error.message });
           return { ok: false, failedStep: step.id, phase: 'preflight', error };
         }
@@ -30,6 +38,12 @@ class Orchestrator {
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       this._emit({ type: 'step-start', stepId: step.id, index: i, total });
+
+      if (skipped.has(step.id)) {
+        this._emit({ type: 'step-skip', stepId: step.id, index: i, total, reason: skipped.get(step.id) });
+        continue;
+      }
+
       try {
         if (!preflightAll) await step.preflight(ctx);
         // Resume support: a step that reports itself already applied is left
@@ -44,6 +58,12 @@ class Orchestrator {
         completed.push(step);
         this._emit({ type: 'step-done', stepId: step.id, index: i, total });
       } catch (error) {
+        // A declined preflight is not a failure: the step never ran, so there
+        // is nothing to roll back and the remaining steps still apply.
+        if (error instanceof SkippableError) {
+          this._emit({ type: 'step-skip', stepId: step.id, index: i, total, reason: error.message });
+          continue;
+        }
         this._emit({ type: 'step-fail', stepId: step.id, phase: 'execute', error: error.message });
         if (rollbackOnFailure) {
           await this._rollback([step, ...completed.slice().reverse()], ctx);
