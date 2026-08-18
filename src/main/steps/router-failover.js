@@ -6,7 +6,8 @@ const CONF = '/etc/vpn-failover.conf';
 const SCRIPT = '/usr/bin/vpn-failover.sh';
 const INITD = '/etc/init.d/vpn-failover';
 
-// Installs the awg<->naive failover daemon (procd) that swaps split-default routes.
+// Installs the four-tier failover daemon (procd) that swaps split-default
+// routes: awg -> naive -> olcrtc -> direct WAN.
 const routerFailover = makeStep({
   id: 'router.failover',
   title: 'Failover daemon (router)',
@@ -39,9 +40,9 @@ const routerFailover = makeStep({
     let state = '';
     await waitFor(async () => {
       state = (await s.exec('cat /var/run/vpn-failover.state 2>/dev/null')).stdout.trim();
-      return /^(awg|naive|wan)$/.test(state);
+      return /^(awg|naive|olcrtc|wan)$/.test(state);
     }, { timeoutMs: t.pollTimeoutMs ?? 30000, intervalMs: t.pollIntervalMs ?? 3000 });
-    if (!/^(awg|naive|wan)$/.test(state)) {
+    if (!/^(awg|naive|olcrtc|wan)$/.test(state)) {
       throw new Error(`router.failover: no valid route state chosen (state='${state}')`);
     }
   },

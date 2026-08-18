@@ -50,3 +50,21 @@ test('router.failover deploys the shared core alongside the daemon', async () =>
   assert.ok(s.written['/usr/lib/vpn-failover/core.sh'], 'core.sh must be installed');
   assert.match(s.written['/usr/lib/vpn-failover/core.sh'], /desired_target/);
 });
+
+// The daemon has four tiers now; olcrtc is a legitimate resting state, so
+// verify must not treat it as "no valid route chosen".
+test('router.failover verify accepts the olcrtc tier as a valid state', async () => {
+  const s = new FakeSSHSession({
+    'pgrep -f vpn-failover.sh': { stdout: '1234\n' },
+    'cat /var/run/vpn-failover.state': { stdout: 'olcrtc\n' },
+  });
+  await routerFailover.verify(makeCtx(s));
+});
+
+test('router.failover verify still rejects an unknown state', async () => {
+  const s = new FakeSSHSession({
+    'pgrep -f vpn-failover.sh': { stdout: '1234\n' },
+    'cat /var/run/vpn-failover.state': { stdout: 'confused\n' },
+  });
+  await assert.rejects(routerFailover.verify(makeCtx(s)), /no valid route state/);
+});

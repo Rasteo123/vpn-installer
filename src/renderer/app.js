@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'server.awg': 'awg', 'server.naive': 'naive',
     'router.awg': 'awg-client', 'router.naive': 'naive-client',
     'router.pbr': 'pbr', 'router.failover': 'failover-client',
+    'server.olcrtc': 'olcrtc', 'router.olcrtc': 'olcrtc-client',
   };
   function setBadge(stepId, text, cls) {
     const key = STEP_BADGE[stepId];
@@ -62,6 +63,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.type === 'step-start') { setBadge(e.stepId, 'Установка…', 'active'); addLog(logId, `▶ ${e.stepId}`, 'info'); }
     if (e.type === 'step-done') { setBadge(e.stepId, 'Готово', 'success'); addLog(logId, `✔ ${e.stepId}`, 'success'); }
     if (e.type === 'step-fail') { setBadge(e.stepId, 'Ошибка', 'error'); addLog(logId, `✘ ${e.stepId}: ${e.error}`, 'error'); }
+    // A step can decline itself (unsupported router, already installed). Say so
+    // and why — otherwise its badge sits at "Установка…" forever.
+    if (e.type === 'step-skip') {
+      setBadge(e.stepId, 'Пропущен', 'waiting');
+      addLog(logId, `⊘ ${e.stepId}${e.reason ? ': ' + e.reason : ' — уже установлено'}`, 'info');
+    }
     if (e.type === 'rollback') addLog(logId, `↩ откат ${e.stepId}`, 'warning');
   });
 
