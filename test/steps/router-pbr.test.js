@@ -25,7 +25,6 @@ test('router.pbr builds RU_DOMAINS policy and writes updater with discovered nft
   assert.match(s.written['/tmp/pbr.uci'], /name='RU_DOMAINS_WAN'/);
   assert.match(s.written['/tmp/pbr.uci'], /dest_addr='ru'/);
   assert.strictEqual(ctx.results.pbr.nftset, 'pbr_wan_4_dst_ip_cfgABC123');
-  assert.match(s.written['/etc/awg-bypass/update-ru-cidr.sh'], /pbr_wan_4_dst_ip_cfgABC123/);
 });
 
 // pbr on a slow router creates its nftset a few seconds after the restart —

@@ -17,12 +17,23 @@ test('naiveClientJson reproduces the reference naive-client.json', () => {
   );
 });
 
-test('updateRuCidrScript reproduces the reference updater', () => {
-  const out = r.updateRuCidrScript({ nftset: 'pbr_wan_4_dst_ip_cfg066ff5' });
-  assert.strictEqual(
-    normalize(out),
-    normalize(readReference('router/etc/awg-bypass/update-ru-cidr.sh')),
-  );
+// This script is no longer a reproduction of the captured router state: the
+// captured version loads the RU list into a PBR-managed policy set via
+// `nft -f`, which PBR wipes on every reload. Applying now belongs to the
+// include (loadRuCidrScript), so the updater is asserted on behaviour rather
+// than pinned to a snapshot that records the old, transient arrangement.
+nodeTest('updateRuCidrScript downloads the RIPE list and validates its size', () => {
+  const out = r.updateRuCidrScript();
+  assert.match(out, /stat\.ripe\.net/);
+  assert.match(out, /ru_cidr\.raw/);
+  assert.match(out, /-lt 1000/);
+});
+
+nodeTest('updateRuCidrScript reloads pbr and never touches nft itself', () => {
+  const out = r.updateRuCidrScript();
+  assert.match(out, /\/etc\/init\.d\/pbr reload/);
+  assert.doesNotMatch(out, /nft -f/);
+  assert.doesNotMatch(out, /add element/);
 });
 
 test('static failover assets match the captured reference', () => {

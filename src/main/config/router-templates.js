@@ -66,15 +66,15 @@ function naiveClientJson({
 
 // RU-CIDR updater: pulls RU ranges from RIPE into the PBR nftset. The nftset
 // name is supplied at runtime from the created policy — never hardcoded.
-function updateRuCidrScript({ nftset }) {
+// Weekly cron job: refresh the cached RIPE RU list, then ask PBR to rebuild.
+// The rebuild runs the include from loadRuCidrScript(), which is what actually
+// populates the nftset — applying it here would only last until the next
+// `pbr reload` wiped the set.
+function updateRuCidrScript() {
   return `#!/bin/sh
-# Download Russian CIDR list from RIPE and load into PBR nftset
-NFTSET="${nftset}"
 RAWFILE="/etc/awg-bypass/ru_cidr.raw"
-NFTFILE="/etc/awg-bypass/ru_cidr_load.nft"
 TMPFILE="/tmp/ru_cidr_new.raw"
 
-# Download
 if curl -sS --max-time 60 "https://stat.ripe.net/data/country-resource-list/data.json?resource=ru" \\
     | jq -r ".data.resources.ipv4[]" > "$TMPFILE" 2>/dev/null; then
     COUNT=$(wc -l < "$TMPFILE")
@@ -91,17 +91,10 @@ else
     [ -f "$RAWFILE" ] || exit 1
 fi
 
-# Build nft file
-{
-    echo "add element inet fw4 \${NFTSET} {"
-    sed "s/$/,/" "$RAWFILE" | sed "$ s/,$//"
-    echo "}"
-} > "$NFTFILE"
-
-# Load if nftset exists
-if nft list set inet fw4 "$NFTSET" >/dev/null 2>&1; then
-    nft -f "$NFTFILE" 2>/dev/null
-    logger -t ru-cidr "Loaded into nftset"
+if /etc/init.d/pbr reload >/dev/null 2>&1; then
+    logger -t ru-cidr "Reloaded PBR to apply updated RU CIDR list"
+else
+    logger -t ru-cidr "ERROR: PBR reload failed after CIDR update"
 fi
 `;
 }
