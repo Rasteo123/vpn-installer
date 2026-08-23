@@ -23,6 +23,7 @@ no_sleep=${VPN_FAILOVER_NO_SLEEP:-0}
 awg_fails=0
 awg_oks=0
 awg_alive=0
+awg_last_ifup=0
 naive_fails=0
 naive_oks=0
 naive_alive=0
@@ -85,8 +86,9 @@ wait_for_socks() {
 
 wait_for_iface() {
     wait_iface=$1
+    wait_limit=${2:-$OLCRTC_START_TIMEOUT}
     wait_elapsed=0
-    while [ "$wait_elapsed" -lt "$OLCRTC_START_TIMEOUT" ]; do
+    while [ "$wait_elapsed" -lt "$wait_limit" ]; do
         if ip link show "$wait_iface" >/dev/null 2>&1; then
             return 0
         fi
@@ -249,7 +251,26 @@ restore_state() {
     esac
 }
 
+# netifd builds awg0 at boot. If that setup fails the device never appears at
+# all, and probe_iface() — which starts with `ip link show` — calls the tier
+# dead without anyone ever retrying: nothing else here runs ifup. The router
+# then latches on a lower tier for good, which is what a reboot during an
+# upstream outage produced. Ask netifd for the device before judging the tier.
+ensure_awg() {
+    ip link show "$AWG_IFACE" >/dev/null 2>&1 && return 0
+    [ -n "$AWG_UCI_IFACE" ] || return 1
+
+    ensure_now=$(date +%s)
+    [ $((ensure_now - awg_last_ifup)) -ge "$AWG_IFUP_HOLDDOWN" ] || return 1
+    awg_last_ifup=$ensure_now
+
+    event "ifup:$AWG_UCI_IFACE"
+    ifup "$AWG_UCI_IFACE" >/dev/null 2>&1
+    wait_for_iface "$AWG_IFACE" "$AWG_IFUP_TIMEOUT"
+}
+
 run_cycle() {
+    ensure_awg
     if probe_iface "$AWG_IFACE"; then awg_result=1; else awg_result=0; fi
     record_result awg "$awg_result" "$FAIL_THRESHOLD" "$SUCCESS_THRESHOLD"
 

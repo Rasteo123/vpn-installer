@@ -117,3 +117,43 @@ nodeTest('the failover daemon drives the olcrtc tier and its start timeout', () 
   assert.match(r.vpnFailoverConf(), /OLCRTC_START_TIMEOUT=\d+/);
   assert.match(r.vpnFailoverConf(), /OLCRTC_SOCKS_PORT=8808/);
 });
+
+// netifd builds awg0 at boot. When that setup fails the device never appears
+// at all, and probe_iface() — which starts with `ip link show` — reports the
+// tier dead without anyone ever retrying it. Nothing in the daemon runs ifup,
+// so the router latches on a lower tier permanently: a reboot during an
+// upstream outage left awg0 absent and the box stuck on olcrtc for hours after
+// the link came back. The daemon has to ask netifd for the device itself.
+nodeTest('failover asks netifd to rebuild awg0 when the device is missing', () => {
+  const script = r.vpnFailoverScript();
+  assert.match(script, /ensure_awg\(\)/);
+  assert.match(script, /ip link show "\$AWG_IFACE" >\/dev\/null 2>&1 && return 0/);
+  assert.match(script, /ifup "\$AWG_UCI_IFACE"/);
+});
+
+nodeTest('failover rebuilds awg0 before it probes the tier', () => {
+  assert.match(r.vpnFailoverScript(), /run_cycle\(\) \{\s+ensure_awg/);
+});
+
+// A genuinely broken interface must not be re-ifup'd every CHECK_INTERVAL.
+nodeTest('failover rate-limits the awg0 rebuild', () => {
+  const script = r.vpnFailoverScript();
+  assert.match(script, /awg_last_ifup/);
+  assert.match(script, /-ge "\$AWG_IFUP_HOLDDOWN"/);
+});
+
+// wait_for_iface was written for the olcrtc stack and blocks up to
+// OLCRTC_START_TIMEOUT. Reusing it verbatim for awg0 would stall the whole
+// probe loop for a minute on every failed rebuild.
+nodeTest('the awg0 rebuild waits on its own shorter timeout', () => {
+  const script = r.vpnFailoverScript();
+  assert.match(script, /wait_limit=\$\{2:-\$OLCRTC_START_TIMEOUT\}/);
+  assert.match(script, /wait_for_iface "\$AWG_IFACE" "\$AWG_IFUP_TIMEOUT"/);
+});
+
+nodeTest('the failover conf names the uci interface to bring up', () => {
+  const conf = r.vpnFailoverConf();
+  assert.match(conf, /AWG_UCI_IFACE=awg0/);
+  assert.match(conf, /AWG_IFUP_HOLDDOWN=\d+/);
+  assert.match(conf, /AWG_IFUP_TIMEOUT=\d+/);
+});
