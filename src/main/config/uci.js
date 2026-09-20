@@ -8,9 +8,11 @@ function uciBatch(lines) {
 function awgNetworkUci({
   clientPrivateKey,
   clientAddress = '10.66.66.2/32',
-  // Must match the server side (templates.js awgServerConf): 1420 = 1500 minus
-  // WG-over-IPv4 overhead. 1280 fragmented large game UDP and broke Steam P2P.
-  mtu = 1420,
+  // Must match the server side (templates.js awgServerConf), which explains the
+  // arithmetic: 120 + roundup16(inner) on the wire, so 1376 is the largest MTU
+  // that never fragments on a 1500-byte WAN, while still leaving room for the
+  // 1328-byte inner packet Steam's relay pings need.
+  mtu = 1376,
   obfuscation,
   serverPublicKey,
   presharedKey,

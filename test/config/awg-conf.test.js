@@ -20,7 +20,7 @@ test('parseAwgConf round-trips what awgServerConf renders', () => {
 
   assert.strictEqual(parsed.interface.listenPort, 443);
   assert.strictEqual(parsed.interface.address, '10.66.66.1/24');
-  assert.strictEqual(parsed.interface.mtu, 1420);
+  assert.strictEqual(parsed.interface.mtu, 1376);
   // the PrivateKey value must NOT be extracted, only its presence noted
   assert.strictEqual(parsed.interface.hasPrivateKey, true);
   assert.ok(!JSON.stringify(parsed).includes('SERVERPRIV'));

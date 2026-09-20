@@ -6,9 +6,15 @@ function awgServerConf({
   serverAddress = '10.66.66.1/24',
   listenPort = 443,
   privateKey,
-  // 1500 minus WG-over-IPv4 overhead. 1280 fragmented 1300-byte UDP (Steam
-  // relay pings); Valve relays ignore fragments, breaking P2P rendezvous.
-  mtu = 1420,
+  // A data packet on the wire is 120 + roundup16(inner): AmneziaWG prepends 60
+  // bytes of junk on top of WireGuard's own 60. At 1420 that came to 1544, so
+  // every full-size packet was split in two on a 1500-byte WAN (measured:
+  // ~51k oversized datagrams per 10s, +11% overhead, double the packet rate).
+  // 1376 lands on exactly 1496 and never fragments. It still clears the
+  // 1328-byte inner packet Steam's relay pings need; 1280 broke P2P rendezvous
+  // because Valve relays drop fragments. Assumes a 1500-byte WAN — PPPoE
+  // (1492) would need 1360.
+  mtu = 1376,
   obfuscation,
   wanIface,
   peerPublicKey,
